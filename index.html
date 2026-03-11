@@ -171,18 +171,7 @@ body {
   top: 50%; left: 50%;
 }
 
-/* Moon */
-.moon {
-  position: fixed; z-index: 2; pointer-events: none;
-  width: 46px; height: 46px; border-radius: 50%;
-  background: radial-gradient(circle at 38% 35%, #fffef5 0%, #f5ecc8 45%, #d4be78 72%, transparent 82%);
-  box-shadow:
-    0 0 0 3px rgba(255,240,170,0.10),
-    0 0 18px 7px rgba(255,228,140,0.18),
-    0 0 55px 18px rgba(230,200,110,0.09);
-  opacity: 0;
-  transition: opacity 3s ease;
-}
+/* Moon — drawn on canvas */
 
 /* Animated cloud layers */
 .clouds {
@@ -744,7 +733,7 @@ footer { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--mute
 </div>
 <canvas id="rain-canvas"></canvas>
 <canvas id="sun" style="position:fixed;z-index:2;pointer-events:none;opacity:0;transition:opacity 3s ease;border-radius:50%;"></canvas>
-<div class="moon" id="moon"></div>
+<canvas id="moon" style="position:fixed;z-index:2;pointer-events:none;opacity:0;transition:opacity 3s ease;"></canvas>
 <div class="horizon-glow"></div>
 <div class="app">
 
@@ -1414,20 +1403,133 @@ function applySkyPhase(hour, weatherSf) {
   }
 
   // ── Moon arc ──────────────────────────────────────────────────────────────
-  // Moon rises ~19:00, peaks ~01:00, sets ~07:00
   const moon = document.getElementById('moon');
-  const moonOpacity = { night:0.88, dawn:0.30, morning:0, day:0, sunset:0, dusk:0.55 };
+  const moonOpacity = { night:0.92, dawn:0.28, morning:0, day:0, sunset:0, dusk:0.50 };
   const moonVisible = hour >= 19 || hour < 7;
   if (moon) {
+    const size = 90; // canvas logical size
+    moon.width  = size * 2; moon.height = size * 2; // 2x retina
+    moon.style.width  = size + 'px';
+    moon.style.height = size + 'px';
+
     if (moonVisible) {
-      const mh = hour < 7 ? hour + 24 : hour; // 19..31
-      const mt = (mh - 19) / 12;              // 0 at 7pm, 1 at 7am
+      const mh = hour < 7 ? hour + 24 : hour;
+      const mt = (mh - 19) / 12;
       const mx = 4 + mt * 92;
       const my = 6 + Math.sin(mt * Math.PI) * 65;
-      moon.style.left   = `calc(${mx}vw - 23px)`;
-      moon.style.bottom = `calc(${my}vh - 23px)`;
+      moon.style.left   = `calc(${mx}vw - ${size/2}px)`;
+      moon.style.bottom = `calc(${my}vh - ${size/2}px)`;
+
+      const ctx = moon.getContext('2d');
+      ctx.clearRect(0, 0, moon.width, moon.height);
+      const cx = moon.width / 2, cy = moon.height / 2;
+      const R = size * 0.82; // moon radius in canvas px
+
+      // Outer halo
+      const halo = ctx.createRadialGradient(cx, cy, R * 0.6, cx, cy, R * 2.2);
+      halo.addColorStop(0,   'rgba(255,240,170,0.18)');
+      halo.addColorStop(0.4, 'rgba(220,200,120,0.07)');
+      halo.addColorStop(1,   'rgba(200,170,80,0)');
+      ctx.fillStyle = halo;
+      ctx.beginPath(); ctx.arc(cx, cy, R * 2.2, 0, Math.PI * 2); ctx.fill();
+
+      // Moon disc base — warm ivory
+      const disc = ctx.createRadialGradient(cx - R*0.15, cy - R*0.2, 0, cx, cy, R);
+      disc.addColorStop(0,   '#fffef0');
+      disc.addColorStop(0.5, '#f5e8c0');
+      disc.addColorStop(0.85,'#d8c080');
+      disc.addColorStop(1,   '#b89040');
+      ctx.fillStyle = disc;
+      ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+
+      // Subtle surface texture — darker patches (mare)
+      const mare = [
+        { x: cx - R*0.22, y: cy - R*0.08, r: R*0.28 },
+        { x: cx + R*0.18, y: cy + R*0.22, r: R*0.22 },
+        { x: cx - R*0.05, y: cy + R*0.30, r: R*0.18 },
+        { x: cx + R*0.30, y: cy - R*0.20, r: R*0.14 },
+      ];
+      mare.forEach(m => {
+        const mg = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.r);
+        mg.addColorStop(0,   'rgba(140,110,50,0.20)');
+        mg.addColorStop(0.6, 'rgba(140,110,50,0.10)');
+        mg.addColorStop(1,   'rgba(140,110,50,0)');
+        ctx.fillStyle = mg;
+        ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI*2); ctx.fill();
+      });
+
+      // Small craters
+      const craters = [
+        { x: cx - R*0.30, y: cy - R*0.15, r: R*0.07 },
+        { x: cx + R*0.22, y: cy + R*0.10, r: R*0.05 },
+        { x: cx - R*0.10, y: cy + R*0.38, r: R*0.06 },
+        { x: cx + R*0.38, y: cy - R*0.30, r: R*0.04 },
+        { x: cx + R*0.05, y: cy - R*0.42, r: R*0.035 },
+      ];
+      craters.forEach(c => {
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        // shadow arc
+        const cg = ctx.createRadialGradient(c.x + c.r*0.3, c.y + c.r*0.3, 0, c.x, c.y, c.r);
+        cg.addColorStop(0,   'rgba(80,60,20,0.5)');
+        cg.addColorStop(0.7, 'rgba(80,60,20,0.15)');
+        cg.addColorStop(1,   'rgba(80,60,20,0)');
+        ctx.fillStyle = cg;
+        ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI*2); ctx.fill();
+        // rim highlight
+        ctx.globalAlpha = 0.25;
+        ctx.strokeStyle = 'rgba(255,240,180,0.8)';
+        ctx.lineWidth = c.r * 0.25;
+        ctx.beginPath(); ctx.arc(c.x - c.r*0.15, c.y - c.r*0.15, c.r * 0.75, Math.PI, Math.PI*1.7); ctx.stroke();
+        ctx.restore();
+      });
+
+      // Limb darkening — edge fades slightly
+      const limb = ctx.createRadialGradient(cx, cy, R * 0.55, cx, cy, R);
+      limb.addColorStop(0,   'rgba(0,0,0,0)');
+      limb.addColorStop(0.7, 'rgba(0,0,0,0)');
+      limb.addColorStop(1,   'rgba(20,10,0,0.35)');
+      ctx.fillStyle = limb;
+      ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2); ctx.fill();
+
+      // Crescent shadow — determine phase from time
+      // mt=0 (7pm) → waxing gibbous, mt=0.25 (1am) → full, mt=0.5 (1am) → waning
+      // Simple approach: shadow disc offset to create crescent
+      const phase2 = mt < 0.5 ? mt * 2 : (1 - mt) * 2; // 0=crescent, 1=full
+      const shadowOffset = R * (1 - phase2) * 1.6; // how far shadow centre is offset
+      if (shadowOffset > 2) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-atop';
+        // Draw the dark side
+        const shadowX = cx - shadowOffset * 0.8;
+        const shadowDisc = ctx.createRadialGradient(shadowX, cy, 0, shadowX, cy, R * 1.5);
+        shadowDisc.addColorStop(0,   'rgba(4,8,20,0.92)');
+        shadowDisc.addColorStop(0.5, 'rgba(4,8,20,0.88)');
+        shadowDisc.addColorStop(1,   'rgba(4,8,20,0)');
+        ctx.fillStyle = shadowDisc;
+        ctx.beginPath(); ctx.arc(shadowX, cy, R * 1.5, 0, Math.PI * 2); ctx.fill();
+        // Soft terminator glow (earthshine)
+        const earthshine = ctx.createRadialGradient(shadowX + R*0.6, cy, 0, shadowX + R*0.6, cy, R*0.8);
+        earthshine.addColorStop(0,   'rgba(60,100,180,0.12)');
+        earthshine.addColorStop(1,   'rgba(60,100,180,0)');
+        ctx.fillStyle = earthshine;
+        ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+
+      // Final thin bright rim
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-atop';
+      const rim = ctx.createRadialGradient(cx - R*0.3, cy - R*0.35, R*0.2, cx, cy, R);
+      rim.addColorStop(0,   'rgba(255,255,240,0.35)');
+      rim.addColorStop(0.6, 'rgba(255,240,200,0.05)');
+      rim.addColorStop(1,   'rgba(255,240,200,0)');
+      ctx.fillStyle = rim;
+      ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
     }
-    moon.style.opacity = moonOpacity[phase] ?? 0;
+
+    moon.style.opacity = moonVisible ? (moonOpacity[phase] ?? 0).toString() : '0';
   }
 
   // Aurora — only deep at night
