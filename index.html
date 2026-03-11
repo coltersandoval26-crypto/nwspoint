@@ -1020,14 +1020,15 @@ async function useMyLocation() {
   navigator.geolocation.getCurrentPosition(async pos => {
     const { latitude: lat, longitude: lon } = pos.coords;
     try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
+      // BigDataCloud reverse geocode — free, no key, no User-Agent restrictions
+      const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
       const d = await r.json();
-      const a = d.address || {};
-      const city  = a.city || a.town || a.village || a.county || 'My Location';
-      const state = a.state || '';
+      const city  = d.city || d.locality || d.principalSubdivision || 'My Location';
+      const state = d.principalSubdivisionCode ? d.principalSubdivisionCode.replace('US-','') : '';
       const displayName = state ? `${city}, ${state}` : city;
       lookupCity(displayName, lat, lon);
     } catch {
+      // Fall back to just using the coords with no display name
       lookupCity('My Location', lat, lon);
     }
     btn.disabled = false;
@@ -1035,9 +1036,10 @@ async function useMyLocation() {
   }, err => {
     btn.disabled = false;
     btn.innerHTML = '<span class="geo-icon">◎</span> Use My Location';
-    if (err.code === 1) alert('Location access denied. Please enable location permissions.');
-    else alert('Unable to get your location. Try searching manually.');
-  }, { timeout: 10000 });
+    if (err.code === 1) alert('Location access denied. Please allow location access and try again.');
+    else if (err.code === 2) alert('Location unavailable. Try searching manually.');
+    else alert('Location request timed out. Try searching manually.');
+  }, { timeout: 10000, enableHighAccuracy: false });
 }
 
 // ─── NWS ALERTS ──────────────────────────────────────────────────────────────
