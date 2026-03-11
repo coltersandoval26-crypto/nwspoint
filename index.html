@@ -314,7 +314,7 @@ body {
 }
 .suggestion-item:last-child { border-bottom: none; }
 .suggestion-item:hover { background: rgba(100,200,240,0.1); }
-.sug-icon { font-size: 13px; opacity: .90; }
+.sug-icon { font-size: 13px; opacity: 0.5; }
 .sug-name { flex: 1; font-weight: 600; }
 .sug-state { font-size: 11px; color: var(--muted); }
 
@@ -393,7 +393,7 @@ body {
 .alert-body { flex: 1; }
 .alert-event { font-weight: 700; font-family: 'Nunito', sans-serif; font-size: 14px; }
 .alert-meta  { font-size: 11px; color: var(--muted); margin-top: 2px; letter-spacing: 0.5px; }
-.alert-desc  { margin-top: 6px; color: var(--text2); display: none; }
+.alert-desc  { margin-top: 6px; color: var(--text2); display: none; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
 .alert-item.expanded .alert-desc { display: block; }
 
 /* UV + conditions row */
@@ -1005,7 +1005,7 @@ async function fetchAlerts(lat, lon) {
       const event = p.event || 'Weather Alert';
       const onset = p.onset ? new Date(p.onset).toLocaleString('en-US',{weekday:'short',hour:'numeric',minute:'2-digit'}) : '';
       const ends  = p.ends  ? new Date(p.ends).toLocaleString('en-US',{weekday:'short',hour:'numeric',minute:'2-digit'}) : '';
-      const desc  = (p.description || '').replace(/\n/g, ' ').substring(0, 300);
+      const desc = (p.description || '').trim();
       const cls = sev === 'extreme' || sev === 'severe' ? 'alert-warning' :
                   sev === 'moderate' ? 'alert-watch' : 'alert-advisory';
       const icon = cls === 'alert-warning' ? '🚨' : cls === 'alert-watch' ? '⚠️' : 'ℹ️';
@@ -1015,7 +1015,7 @@ async function fetchAlerts(lat, lon) {
         <div class="alert-body">
           <div class="alert-event">${event}</div>
           ${meta ? `<div class="alert-meta">${meta}</div>` : ''}
-          <div class="alert-desc">${desc}${desc.length >= 300 ? '…' : ''}</div>
+          <div class="alert-desc">${desc}</div>
         </div>
       </div>`;
     }).join('');
