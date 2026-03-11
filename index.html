@@ -1957,8 +1957,8 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
       <div class="wx-coords">${parseFloat(lat).toFixed(2)}°N ${Math.abs(parseFloat(lon)).toFixed(2)}°W · NWS ${office}</div>
       <div class="wx-hero">
         <div class="wx-temp-wrap">
-          <div class="wx-temp" id="wx-temp-actual" style="color:${tempColor(curTemp)}">${curTemp}°</div>
-          <div class="wx-temp wx-temp-feels" id="wx-temp-feels" style="color:${tempColor(feelsLike)};display:none">${feelsLike}°</div>
+          <div class="wx-temp" id="wx-temp-actual" data-temp="${curTemp}">${curTemp}°</div>
+          <div class="wx-temp wx-temp-feels" id="wx-temp-feels" data-temp="${feelsLike}" style="display:none">${feelsLike}°</div>
           <div class="wx-feels-toggle">
             <button class="feels-btn active" id="btn-actual" onclick="toggleFeels('actual')">Actual</button>
             <button class="feels-btn" id="btn-feels" onclick="toggleFeels('feels')">Feels Like</button>
@@ -2018,6 +2018,9 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   `;
 
   document.getElementById('forecast-content').innerHTML = html;
+
+  // Apply initial temperature color (JS controls color, no inline style on elements)
+  toggleFeels('actual');
 
   // Draw initial curve (temp)
   redrawCurve('temp');
@@ -2092,6 +2095,9 @@ function selectMetricCard(type, el) {
   document.querySelectorAll('.metric-card').forEach(c => c.classList.remove('active'));
   // Activate clicked card
   if (el) el.classList.add('active');
+  // Sync feels-like toggle with card selection
+  if (type === 'fl') toggleFeels('feels');
+  else toggleFeels('actual');
   // Update hourly row + redraw curve
   setHourlyRow(type);
 }
@@ -2439,8 +2445,9 @@ function toggleFeels(mode) {
 
   if (mode === 'actual') {
     actual.style.display = ''; feels.style.display = 'none';
-    btnA.classList.add('active'); btnF.classList.remove('active');
-    // Restore actual temps in hourly cols
+    if (btnA) { btnA.classList.add('active'); btnF.classList.remove('active'); }
+    const t = parseInt(actual.dataset.temp);
+    actual.style.color = tempColorJs(isNaN(t) ? 60 : t);
     document.querySelectorAll('.hour-col[data-pop]').forEach((col, i) => {
       const r = window._hourlyRows?.[i];
       if (!r) return;
@@ -2450,8 +2457,9 @@ function toggleFeels(mode) {
     redrawCurve('temp');
   } else {
     actual.style.display = 'none'; feels.style.display = '';
-    btnF.classList.add('active'); btnA.classList.remove('active');
-    // Show feels-like temps in hourly cols
+    if (btnF) { btnF.classList.add('active'); btnA.classList.remove('active'); }
+    const fl = parseInt(feels.dataset.temp);
+    feels.style.color = tempColorJs(isNaN(fl) ? 60 : fl);
     document.querySelectorAll('.hour-col[data-pop]').forEach((col, i) => {
       const r = window._hourlyRows?.[i];
       if (!r) return;
