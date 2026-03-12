@@ -1819,6 +1819,16 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
     const hourKey = new Date(localMs).toISOString().slice(0, 13);
     const isNow = i === 0;
 
+    // For the NOW column, interpolate between this period and next based on current minute
+    const minFrac = isNow ? (new Date().getMinutes() / 60) : 0;
+    const next = isNow && slice[1] ? slice[1] : null;
+    function interp(a, b) {
+      if (a === null || a === undefined) return a;
+      if (b === null || b === undefined || !next) return a;
+      return a + (b - a) * minFrac;
+    }
+    function interpRound(a, b) { return Math.round(interp(a, b ?? a)); }
+
     // Feels like per hour
     let fl = t;
     if (t <= 50 && ws >= 3) {
@@ -1833,7 +1843,8 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
     }
 
     // Unix timestamp for open-meteo lookup (rounded to hour)
-    const unixHour = Math.floor(d.getTime() / 3600000) * 3600;
+    const unixHour  = Math.floor(d.getTime() / 3600000) * 3600;
+    const unixHour1 = unixHour + 3600; // next hour for interpolation
 
     // Gusts: NWS hourly first, then open-meteo
     const wg = parseWind(p.windGust) || (meteoGusts[unixHour] ? Math.round(meteoGusts[unixHour]) : 0);
@@ -1863,14 +1874,39 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
                : meteoCeil[unixHour] !== undefined ? Math.round(meteoCeil[unixHour] * 3.281)
                : null;
 
-    // Lightning: NWS grid first, then derive from CAPE (J/kg → storm likelihood %)
-    // CAPE: 0=none, 500=weak, 1000=moderate, 2500=significant, 4000+=extreme
+    // Lightning: NWS grid first, then derive from CAPE
     const capeVal = meteoCape[unixHour];
     const capeToLtg = capeVal != null ? Math.min(99, Math.round(Math.sqrt(capeVal / 40))) : null;
     const lightning = gridLightning[hourKey] ?? capeToLtg;
 
-    window._hourlyRows.push({ t, fl, ws, wg, pop, sky, rh, dew, visMiles, pressInHg,
-      snow, ice, ceil, lightning, isNight, isNow, timeStr, dateStr });
+    // For NOW column: interpolate all values toward next hour
+    const tFinal   = isNow ? interpRound(t,   next?.temperature) : t;
+    const wsFinal  = isNow ? interpRound(ws,  parseWind(next?.windSpeed)) : ws;
+    const wgFinal  = isNow ? interpRound(wg,  parseWind(next?.windGust) || (meteoGusts[unixHour1] ? Math.round(meteoGusts[unixHour1]) : wg)) : wg;
+    const popFinal = isNow ? interpRound(pop, next?.probabilityOfPrecipitation?.value ?? pop) : pop;
+    const rhFinal  = isNow ? interpRound(rh,  next?.relativeHumidity?.value ?? rh) : rh;
+    const dewFinal = isNow ? interpRound(dew, next?.dewpoint ? Math.round(next.dewpoint.value * 9/5 + 32) : dew) : dew;
+    const skyFinal = isNow ? interpRound(sky, parseCloudCover(next?.shortForecast ?? '')) : sky;
+    const visFinal = isNow && visMiles !== null ? interp(visMiles, meteoVis[unixHour1] !== undefined ? meteoVis[unixHour1]/1609.34 : visMiles) : visMiles;
+    const presFinal= isNow && meteoPa !== undefined ? interp(meteoPa, meteoPres[unixHour1] ?? meteoPa) * 0.02953 : (meteoPa !== undefined ? meteoPa * 0.02953 : null);
+    const pressInHgFinal = presFinal !== null ? presFinal.toFixed(2) : null;
+    const ceilFinal= isNow && ceil !== null ? Math.round(interp(ceil, meteoCeil[unixHour1] !== undefined ? meteoCeil[unixHour1]*3.281 : ceil)) : ceil;
+    const ltgFinal = isNow && lightning !== null ? Math.round(interp(lightning, gridLightning[new Date(unixHour1*1000).toISOString().slice(0,13)] ?? (meteoCape[unixHour1] != null ? Math.min(99,Math.round(Math.sqrt(meteoCape[unixHour1]/40))) : lightning))) : lightning;
+    let flFinal = fl;
+    if (isNow && next) {
+      const t2 = next.temperature, ws2 = parseWind(next.windSpeed), rh2 = next.relativeHumidity?.value ?? rh;
+      let fl2 = t2;
+      if (t2 <= 50 && ws2 >= 3) fl2 = Math.round(35.74+0.6215*t2-35.75*Math.pow(ws2,0.16)+0.4275*t2*Math.pow(ws2,0.16));
+      else if (t2 >= 80 && rh2 !== null) fl2 = Math.round(-42.379+2.04901523*t2+10.14333127*rh2-0.22475541*t2*rh2-0.00683783*t2*t2-0.05481717*rh2*rh2+0.00122874*t2*t2*rh2+0.00085282*t2*rh2*rh2-0.00000199*t2*t2*rh2*rh2);
+      flFinal = interpRound(fl, fl2);
+    }
+
+    const uvHour = Math.round(meteoUV[unixHour] ?? meteoUV[unixHour - 3600] ?? 0);
+
+    window._hourlyRows.push({ t: tFinal, fl: flFinal, ws: wsFinal, wg: wgFinal, pop: popFinal,
+      sky: skyFinal, rh: rhFinal, dew: dewFinal, visMiles: visFinal,
+      pressInHg: pressInHgFinal, snow, ice, ceil: ceilFinal, lightning: ltgFinal,
+      uv: uvHour, isNight, isNow, timeStr, dateStr });
 
     // Day divider — insert before this column, advance xOffset
     if (dateStr !== prevDate) {
@@ -1905,9 +1941,9 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
       data-ice="${ice !== null ? ice.toFixed(2)+'"' : '—'}"
       data-ceil="${ceil !== null ? ceil.toLocaleString()+'ft' : '—'}"
       data-lightning="${lightning !== null ? lightning+'%' : '—'}">
-      <div class="h-time ${isNow ? 'h-now' : ''}">${isNow ? 'NOW' : timeStr}</div>
+      <div class="h-time ${isNow ? 'h-now' : ''}">${isNow ? new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase().replace(' ','') : timeStr}</div>
       <div class="h-icon">${weatherIcon(sky, isNight, p.shortForecast)}</div>
-      <div class="h-temp" style="color:${tempColor(t)}">${t}°</div>
+      <div class="h-temp" style="color:${tempColor(tFinal)}">${tFinal}°</div>
       <div class="h-bottom h-pop ${pop >= 20 ? 'h-pop-active' : ''}">${popDisplay}</div>
     </div>`;
   });
@@ -2002,7 +2038,10 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
 
   // Conditions chips
   const chips = [];
-  if (uvInfo && isDaytime) chips.push(`<div class="cond-chip ${uvInfo.cls}">${uvInfo.text}</div>`);
+  // UV chip — always shown, clickable to select UV graph
+  const uvChipText = uvInfo ? uvInfo.text : (isDaytime ? 'UV 0 · None' : 'UV — · Night');
+  const uvChipCls  = uvInfo ? uvInfo.cls  : 'uv-low';
+  chips.push(`<div class="cond-chip ${uvChipCls}" style="cursor:pointer;" onclick="selectUVCard()">${uvChipText}</div>`);
   if (curWind > 0) chips.push(`<div class="cond-chip">💨 ${curWind} mph${curGusts ? ` · Gusts ${curGusts}` : ''} ${curWindDir}</div>`);
   if (curRh !== null) chips.push(`<div class="cond-chip">💧 ${curRh}% Humidity</div>`);
   if (curPop > 0) chips.push(`<div class="cond-chip">🌧 ${curPop}% Precip</div>`);
@@ -2018,8 +2057,8 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
           <div class="wx-temp wx-temp-feels" id="wx-temp-feels" data-temp="${feelsLike}" style="display:none">${feelsLike}°</div>
           <div id="wx-mode-label" style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--cyan);text-transform:uppercase;opacity:0;transition:opacity 0.3s ease;height:14px;">ACTUAL TEMP</div>
           <div class="wx-feels-toggle">
-            <button class="feels-btn active" id="btn-actual" onclick="toggleFeels('actual');redrawCurve('temp')">Actual</button>
-            <button class="feels-btn" id="btn-feels" onclick="toggleFeels('feels');redrawCurve('fl')">Feels Like</button>
+            <button class="feels-btn active" id="btn-actual" onclick="document.querySelectorAll('.metric-card').forEach(c=>c.classList.remove('active'));setTempPillsDimmed(false);setUVChipActive(false);toggleFeels('actual');redrawCurve('temp')">Actual</button>
+            <button class="feels-btn" id="btn-feels" onclick="document.querySelectorAll('.metric-card').forEach(c=>c.classList.remove('active'));setTempPillsDimmed(false);setUVChipActive(false);toggleFeels('feels');redrawCurve('fl')">Feels Like</button>
           </div>
         </div>
         <div class="wx-right">
@@ -2157,8 +2196,45 @@ function selectMetricCard(type, el) {
   // Sync feels-like toggle with card selection
   if (type === 'fl') toggleFeels('feels');
   else toggleFeels('actual');
+  // Dim temp pills if this is a non-temp metric, restore if temp
+  const meta = ROW_META[type];
+  setTempPillsDimmed(meta ? !meta.isTemp : true);
+  // Deactivate UV chip highlight
+  setUVChipActive(false);
   // Update hourly row + redraw curve
   setHourlyRow(type);
+}
+
+function selectUVCard() {
+  // Deactivate all metric cards
+  document.querySelectorAll('.metric-card').forEach(c => c.classList.remove('active'));
+  // Dim temp pills
+  setTempPillsDimmed(true);
+  // Highlight UV chip
+  setUVChipActive(true);
+  // Reset feels toggle to actual (UV is not a temp type)
+  toggleFeels('actual');
+  // Draw UV curve
+  setHourlyRow('uv');
+}
+
+function setTempPillsDimmed(dimmed) {
+  // Dim/undim the feels-btn pills
+  const btnA = document.getElementById('btn-actual');
+  const btnF = document.getElementById('btn-feels');
+  if (btnA) btnA.style.opacity = dimmed ? '0.35' : '';
+  if (btnF) btnF.style.opacity = dimmed ? '0.35' : '';
+  // Also dim the h-temp values in hourly columns
+  document.querySelectorAll('.h-temp').forEach(el => {
+    el.style.opacity = dimmed ? '0.3' : '';
+  });
+}
+
+function setUVChipActive(active) {
+  document.querySelectorAll('.cond-chip[onclick="selectUVCard()"]').forEach(el => {
+    el.style.outline = active ? '1.5px solid rgba(240,192,96,0.7)' : '';
+    el.style.background = active ? 'rgba(240,192,96,0.15)' : '';
+  });
 }
 
 const ROW_META = {
@@ -2175,6 +2251,7 @@ const ROW_META = {
   ice:       { label:'Ice Accum.',     color:'#a8d8f0', activeClass:'h-ice-row',      isTemp:false },
   ceil:      { label:'Ceiling Height', color:'#a0b8d0', activeClass:'h-ceil-row',     isTemp:false },
   lightning: { label:'Lightning',      color:'#f0d060', activeClass:'h-lightning-row',isTemp:false },
+  uv:        { label:'UV Index',       color:'#f0c060', activeClass:'h-uv-row',       isTemp:false },
 };
 
 function setHourlyRow(type) {
@@ -2212,6 +2289,7 @@ function getVals(type, rows) {
     if (type === 'ice')  return r.ice ?? 0;
     if (type === 'ceil') return r.ceil ?? 0;
     if (type === 'lightning') return r.lightning ?? 0;
+    if (type === 'uv') return r.uv ?? 0;
     return 0;
   });
 }
@@ -2276,9 +2354,9 @@ function redrawCurve(type) {
     vMax = niceMax(rawMax, 5000);
     if (vMax < 10000) vMax = 10000;
 
-  } else if (type === 'snow' || type === 'ice') {
+  } else if (type === 'uv') {
     vMin = 0;
-    vMax = niceMax(Math.max(rawMax, 1), 0.5);
+    vMax = Math.max(niceMax(rawMax, 1), 11);
 
   } else {
     const pad = Math.max((rawMax - rawMin) * 0.10, 1);
@@ -2560,6 +2638,7 @@ function fmtVal(type, val) {
   if (type === 'snow' || type === 'ice') return parseFloat(val).toFixed(1) + '"';
   if (type === 'ceil') return Math.round(val / 100) + 'k';
   if (type === 'lightning') return Math.round(val) + '%';
+  if (type === 'uv') return Math.round(val) + '';
   return Math.round(val) + '';
 }
 function toggleFeels(mode) {
@@ -2729,13 +2808,11 @@ document.getElementById('main-search').addEventListener('keydown', e => {
 
 function openAlertModal(idx) {
   const data = window._alertData?.[idx];
-  console.log('openAlertModal idx:', idx, 'data:', data);
   if (!data) return;
   document.getElementById('amd-icon').textContent  = data.icon;
   document.getElementById('amd-event').textContent = data.event;
   document.getElementById('amd-meta').textContent  = data.meta;
   document.getElementById('amd-desc').textContent  = data.desc;
-  console.log('desc length:', data.desc?.length, 'desc:', data.desc?.slice(0, 200));
   const m = document.getElementById('alert-modal');
   m.style.display = 'flex';
   m.classList.add('open');
