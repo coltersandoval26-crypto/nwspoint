@@ -245,22 +245,27 @@ body {
 #alert-modal {
   display: none;
   position: fixed; inset: 0; z-index: 10000;
-  background: rgba(0,0,0,0.72);
+  background: rgba(0,0,0,0.75);
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   padding: 24px 16px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  align-items: flex-start;
+  justify-content: center;
 }
-#alert-modal.open { display: flex; align-items: flex-start; justify-content: center; }
+#alert-modal.open { display: flex; }
 .alert-modal-box {
   width: 100%; max-width: 540px;
   background: #0d1628;
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 24px;
-  padding: 24px 22px 28px;
+  padding: 24px 22px 32px;
   box-shadow: 0 24px 80px rgba(0,0,0,0.8);
   margin: auto;
   position: relative;
+  /* Let the box grow naturally — outer modal scrolls */
+  overflow: visible;
 }
 .alert-modal-close {
   position: absolute; top: 16px; right: 16px;
@@ -278,8 +283,9 @@ body {
 }
 .alert-modal-meta { font-size: 11px; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 16px; }
 .alert-modal-desc {
-  font-size: 13.5px; color: var(--text2); line-height: 1.65;
-  white-space: pre-wrap; word-break: break-word;
+  font-size: 13.5px; color: var(--text2); line-height: 1.7;
+  white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word;
+  overflow: visible;
 }
 
 .tagline {
@@ -2621,13 +2627,14 @@ function openAlertModal(idx) {
   document.getElementById('amd-meta').textContent  = data.meta;
   document.getElementById('amd-desc').textContent  = data.desc;
   const m = document.getElementById('alert-modal');
+  m.style.display = 'flex';
   m.classList.add('open');
   m.scrollTop = 0;
-  document.body.style.overflow = 'hidden';
 }
 function closeAlertModal() {
-  document.getElementById('alert-modal').classList.remove('open');
-  document.body.style.overflow = '';
+  const m = document.getElementById('alert-modal');
+  m.classList.remove('open');
+  m.style.display = 'none';
 }
 
 // ─── INSTALL POPUP ───────────────────────────────────────────────────────────
