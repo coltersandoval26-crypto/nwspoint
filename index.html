@@ -1941,7 +1941,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
       data-ice="${ice !== null ? ice.toFixed(2)+'"' : '—'}"
       data-ceil="${ceil !== null ? ceil.toLocaleString()+'ft' : '—'}"
       data-lightning="${lightning !== null ? lightning+'%' : '—'}">
-      <div class="h-time ${isNow ? 'h-now' : ''}">${isNow ? new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase().replace(' ','') : timeStr}</div>
+      <div class="h-time ${isNow ? 'h-now' : ''}" ${isNow ? 'id="now-col-time"' : ''}>${isNow ? new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase().replace(' ','') : timeStr}</div>
       <div class="h-icon">${weatherIcon(sky, isNight, p.shortForecast)}</div>
       <div class="h-temp" style="color:${tempColor(tFinal)}">${tFinal}°</div>
       <div class="h-bottom h-pop ${pop >= 20 ? 'h-pop-active' : ''}">${popDisplay}</div>
@@ -2067,7 +2067,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
         </div>
       </div>
     </div>
-    ${chipsHtml ? `<div style="padding: 6px 16px 10px; margin-top: 2px;">${chipsHtml.replace(/^<div class="conditions-row">/, '<div class="conditions-row" style="padding:0;">').replace(/<\/div>$/, '</div>')}</div>` : ''}
+    ${chipsHtml ? `<div style="padding: 0 0 8px; margin-top: -4px;">${chipsHtml.replace(/^<div class="conditions-row">/, '<div class="conditions-row" style="padding:0;">').replace(/<\/div>$/, '</div>')}</div>` : ''}
 
     <!-- Hourly timeline -->
     <div class="section-card">
@@ -2123,14 +2123,18 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   // Draw initial curve (temp)
   redrawCurve('temp');
 
-  // Sync curve SVG with hourly scroll via translateX (curve-wrap is overflow:hidden, can't scroll)
+  // Sync curve SVG with hourly scroll — replace element to drop old listeners
   const hourlyScroll = document.getElementById('hourly-scroll');
   const curveInner   = document.getElementById('curve-scroll-inner');
   if (hourlyScroll && curveInner) {
-    hourlyScroll.addEventListener('scroll', () => {
-      curveInner.style.transform = `translateX(-${hourlyScroll.scrollLeft}px)`;
-      window._curveScrollLeft = hourlyScroll.scrollLeft;
-      // Re-fire hover render so crosshair/dot track correctly while scrolling
+    const fresh = hourlyScroll.cloneNode(false);
+    // move children across
+    while (hourlyScroll.firstChild) fresh.appendChild(hourlyScroll.firstChild);
+    hourlyScroll.parentNode.replaceChild(fresh, hourlyScroll);
+    const hs = document.getElementById('hourly-scroll');
+    hs.addEventListener('scroll', () => {
+      curveInner.style.transform = `translateX(-${hs.scrollLeft}px)`;
+      window._curveScrollLeft = hs.scrollLeft;
       const hitArea = document.getElementById('chart-hit-area');
       if (hitArea) hitArea._wrapAbsLeft = document.getElementById('curve-wrap')?.getBoundingClientRect().left;
     });
@@ -2580,28 +2584,29 @@ function wireChartHover() {
     if (tooltip && ttTime && ttVal) {
       const color = meta?.isTemp ? '#e8a84a' : (meta?.color || '#e8a84a');
 
-      // If hovering within the first column, interpolate toward next point based on x position
+      // Interpolate value between this point and next based on cursor x within the column
       let displayVal = pt.v;
       let timeLabel = pt.time;
-      if (best === 0 && pts.length > 1) {
-        // relX within first column: 0 = start, COL_SLOT = end
-        const COL_SLOT = 70;
-        const firstX = pts[0].x; // already offset by minuteOffsetPx
-        const secondX = pts[1].x;
-        const colFrac = Math.max(0, Math.min(1, (relX - firstX) / (secondX - firstX)));
-        if (pts[1].v !== null && !isNaN(pts[1].v)) {
-          displayVal = pt.v + (pts[1].v - pt.v) * colFrac;
+      const nextPt = pts[best + 1];
+      if (nextPt && nextPt.v !== null && !isNaN(nextPt.v) && pt.v !== null && !isNaN(pt.v)) {
+        const colFrac = Math.max(0, Math.min(1, (relX - pt.x) / (nextPt.x - pt.x)));
+        displayVal = pt.v + (nextPt.v - pt.v) * colFrac;
+        // Show interpolated time with minutes
+        const fracMins = Math.round(colFrac * 60);
+        // Parse the hour from pt.time (e.g. "5pm", "10am")
+        const hmatch = pt.time.match(/^(\d+)(am|pm)$/i);
+        if (hmatch) {
+          let h = parseInt(hmatch[1]);
+          const ap = hmatch[2].toLowerCase();
+          if (ap === 'pm' && h !== 12) h += 12;
+          if (ap === 'am' && h === 12) h = 0;
+          const totalMins = h * 60 + fracMins;
+          const dh = Math.floor(totalMins / 60) % 24;
+          const dm = totalMins % 60;
+          const dap = dh >= 12 ? 'pm' : 'am';
+          const dh12 = dh % 12 || 12;
+          timeLabel = `${dh12}:${String(dm).padStart(2,'0')}${dap}`;
         }
-        // Show exact time with minutes for NOW column
-        const now = new Date();
-        const hoverMins = Math.round((now.getMinutes() + now.getSeconds()/60) + colFrac * 60);
-        const baseHour = now.getHours();
-        const totalMins = now.getMinutes() + Math.round(colFrac * 60);
-        const dispHour = (baseHour + Math.floor(totalMins / 60)) % 24;
-        const dispMin  = totalMins % 60;
-        const ampm = dispHour >= 12 ? 'pm' : 'am';
-        const h12  = dispHour % 12 || 12;
-        timeLabel = `${h12}:${String(dispMin).padStart(2,'0')}${ampm}`;
       }
 
       ttTime.textContent = timeLabel + (pt.dateStr ? '  ·  ' + pt.dateStr : '');
@@ -2802,6 +2807,11 @@ function updateBadge() {
   const liveText = document.getElementById('live-text');
   if (!liveText) return;
   liveText.textContent = `LIVE · ${liveClockStr()}`;
+  // Tick the NOW column time label
+  const nowColTime = document.getElementById('now-col-time');
+  if (nowColTime) {
+    nowColTime.textContent = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase().replace(' ','');
+  }
   // Nudge the now-line to current minute within the hour
   const nowLine = document.getElementById('chart-now-line');
   if (nowLine) {
