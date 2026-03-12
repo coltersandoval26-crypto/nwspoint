@@ -823,7 +823,7 @@ footer { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--mute
 </div>
 
 <!-- Alert detail modal -->
-<div id="alert-modal" onclick="if(event.target===this)closeAlertModal()">
+<div id="alert-modal" style="display:none;" onclick="if(event.target===this)closeAlertModal()">
   <div class="alert-modal-box">
     <button class="alert-modal-close" onclick="closeAlertModal()">×</button>
     <div class="alert-modal-icon" id="amd-icon"></div>
@@ -2621,11 +2621,13 @@ document.getElementById('main-search').addEventListener('keydown', e => {
 
 function openAlertModal(idx) {
   const data = window._alertData?.[idx];
+  console.log('openAlertModal idx:', idx, 'data:', data);
   if (!data) return;
   document.getElementById('amd-icon').textContent  = data.icon;
   document.getElementById('amd-event').textContent = data.event;
   document.getElementById('amd-meta').textContent  = data.meta;
   document.getElementById('amd-desc').textContent  = data.desc;
+  console.log('desc length:', data.desc?.length, 'desc:', data.desc?.slice(0, 200));
   const m = document.getElementById('alert-modal');
   m.style.display = 'flex';
   m.classList.add('open');
