@@ -1755,11 +1755,11 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
       + 0.00085282*curTemp*curRh*curRh - 0.00000199*curTemp*curTemp*curRh*curRh);
   }
 
-  // Today's high/low from the full calendar day
+  // Today's high/low — NWS only returns future periods so include curTemp as floor
   const todayStr = new Date().toDateString();
   const todayPeriods = slice.filter(p => new Date(p.startTime).toDateString() === todayStr);
-  const todayHigh = todayPeriods.length ? Math.max(...todayPeriods.map(p=>p.temperature)) : curTemp;
-  const todayLow  = todayPeriods.length ? Math.min(...todayPeriods.map(p=>p.temperature)) : curTemp;
+  const todayHigh = Math.max(curTemp, ...(todayPeriods.map(p=>p.temperature)));
+  const todayLow  = Math.min(curTemp, ...(todayPeriods.map(p=>p.temperature)));
 
   // All temps for SVG curve range — snap to 5° steps
   const allTemps = slice.map(p=>p.temperature);
@@ -1963,7 +1963,10 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
     meteoUVVal = meteoUV[firstUnixHour + off] ?? meteoUV[firstUnixHour - off] ?? meteoUV[nowUnix + off] ?? meteoUV[nowUnix - off] ?? null;
     if (meteoUVVal !== null) break;
   }
-  console.log('[UV] meteoUV keys sample:', Object.keys(meteoUV).slice(0,3), 'firstUnixHour:', firstUnixHour, 'nowUnix:', nowUnix, 'found:', meteoUVVal);
+  console.log('[UV] meteoData hourly keys:', meteoData ? Object.keys(meteoData.hourly || {}) : 'no meteoData');
+  console.log('[UV] meteoUV entry count:', Object.keys(meteoUV).length, 'sample keys:', Object.keys(meteoUV).slice(0,3));
+  console.log('[UV] firstUnixHour:', firstUnixHour, 'nowUnix:', nowUnix);
+  console.log('[UV] isDaytime:', firstPeriod.isDaytime, 'firstPeriod.startTime:', firstPeriod.startTime);
   const uvVal = uvMap[firstHourKey] ?? uvData?.now?.uvi ?? meteoUVVal ?? null;
   console.log('[UV] final uvVal:', uvVal, 'isDaytime:', firstPeriod.isDaytime);
   function uvLabel(u) {
@@ -2243,10 +2246,11 @@ function redrawCurve(type) {
     vMax = niceMax(Math.max(rawMax, 10), 5);
 
   } else if (type === 'pres') {
-    // Pressure in inHg — nice 0.5 steps
-    const step = 0.5;
-    vMin = niceMin(rawMin, step) - step;
-    vMax = niceMax(rawMax, step) + step;
+    // Pressure in inHg — tight range, 0.1 step labels
+    const spread = rawMax - rawMin;
+    const pad = Math.max(spread * 0.15, 0.05);
+    vMin = Math.floor((rawMin - pad) * 10) / 10;
+    vMax = Math.ceil((rawMax + pad) * 10) / 10;
 
   } else if (type === 'ceil') {
     vMin = 0;
