@@ -1706,7 +1706,10 @@ function parseGridSeries(layer, toF) {
 }
 
 function renderForecast(periods, city, state, office, lat, lon, displayName, gridData, uvData, meteoData) {
-  const slice = periods.slice(0, 120);
+  // Skip periods that have already ended — start from the current hour
+  const nowMs = Date.now();
+  const startIdx = periods.findIndex(p => new Date(p.startTime).getTime() + 3600000 > nowMs);
+  const slice = periods.slice(Math.max(0, startIdx), Math.max(0, startIdx) + 120);
   const firstPeriod = slice[0];
 
   // Build open-meteo lookup maps: unixtime → value
