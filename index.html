@@ -1951,7 +1951,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   // UV index from currentuvindex.com (free, no key)
   // Build hourKey→uvi map from forecast array
   const uvMap = {};
-  if (uvData?.ok) {
+  if (uvData) {
     if (uvData.now) uvMap[uvData.now.time.slice(0,13)] = uvData.now.uvi;
     (uvData.forecast || []).forEach(f => { uvMap[f.time.slice(0,13)] = f.uvi; });
   }
@@ -1986,8 +1986,8 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
           <div class="wx-temp wx-temp-feels" id="wx-temp-feels" data-temp="${feelsLike}" style="display:none">${feelsLike}°</div>
           <div id="wx-mode-label" style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--cyan);text-transform:uppercase;opacity:0;transition:opacity 0.3s ease;height:14px;">ACTUAL TEMP</div>
           <div class="wx-feels-toggle">
-            <button class="feels-btn active" id="btn-actual" onclick="toggleFeels('actual')">Actual</button>
-            <button class="feels-btn" id="btn-feels" onclick="toggleFeels('feels')">Feels Like</button>
+            <button class="feels-btn active" id="btn-actual" onclick="toggleFeels('actual');redrawCurve('temp')">Actual</button>
+            <button class="feels-btn" id="btn-feels" onclick="toggleFeels('feels');redrawCurve('fl')">Feels Like</button>
           </div>
         </div>
         <div class="wx-right">
@@ -2469,11 +2469,7 @@ function toggleFeels(mode) {
   const btnF   = document.getElementById('btn-feels');
   if (!actual || !feels) return;
 
-  // Get the currently visible element to flash
-  const current = mode === 'actual' ? actual : feels;
-  const other   = mode === 'actual' ? feels  : actual;
-
-  // Flash transition: fade out old, swap, fade in new
+  const other = mode === 'actual' ? feels : actual;
   other.classList.add('switching');
   setTimeout(() => {
     if (mode === 'actual') {
@@ -2481,7 +2477,6 @@ function toggleFeels(mode) {
       if (btnA) { btnA.classList.add('active'); btnF.classList.remove('active'); }
       const t = parseInt(actual.dataset.temp);
       actual.style.color = tempColorJs(isNaN(t) ? 60 : t);
-      // update label
       const lbl = document.getElementById('wx-mode-label');
       if (lbl) { lbl.textContent = 'ACTUAL TEMP'; lbl.style.opacity = '1'; setTimeout(() => { if(lbl) lbl.style.opacity = '0'; }, 1800); }
       document.querySelectorAll('.hour-col[data-pop]').forEach((col, i) => {
@@ -2490,13 +2485,11 @@ function toggleFeels(mode) {
         const el = col.querySelector('.h-temp');
         if (el) { el.textContent = r.t + '°'; el.style.color = tempColorJs(r.t); }
       });
-      redrawCurve('temp');
     } else {
       actual.style.display = 'none'; feels.style.display = '';
       if (btnF) { btnF.classList.add('active'); btnA.classList.remove('active'); }
       const fl = parseInt(feels.dataset.temp);
       feels.style.color = tempColorJs(isNaN(fl) ? 60 : fl);
-      // update label
       const lbl = document.getElementById('wx-mode-label');
       if (lbl) { lbl.textContent = 'FEELS LIKE'; lbl.style.opacity = '1'; setTimeout(() => { if(lbl) lbl.style.opacity = '0'; }, 1800); }
       document.querySelectorAll('.hour-col[data-pop]').forEach((col, i) => {
@@ -2505,7 +2498,6 @@ function toggleFeels(mode) {
         const el = col.querySelector('.h-temp');
         if (el) { el.textContent = r.fl + '°'; el.style.color = tempColorJs(r.fl); }
       });
-      redrawCurve('fl');
     }
     other.classList.remove('switching');
   }, 120);
