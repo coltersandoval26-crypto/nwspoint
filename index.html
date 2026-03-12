@@ -1962,7 +1962,9 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   // Trigger atmosphere effects
   updateAtmosphere(firstPeriod.shortForecast, curPop, firstPeriod.startTime);
 
-  // UV — Open-Meteo fallback (currentuvindex.com removed, domain dead)
+  // isDaytime: use NWS flag but fall back to hour-based check (NWS sometimes wrong at dawn/dusk)
+  const localHour = new Date().getHours();
+  const isDaytime = firstPeriod.isDaytime ?? (localHour >= 7 && localHour < 20);
   const uvMap = {};
   if (uvData) {
     if (uvData.now) uvMap[uvData.now.time.slice(0,13)] = uvData.now.uvi;
@@ -1980,12 +1982,12 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   console.log('[UV] meteoData hourly keys:', meteoData ? Object.keys(meteoData.hourly || {}) : 'no meteoData');
   console.log('[UV] meteoUV entry count:', Object.keys(meteoUV).length, 'sample keys:', Object.keys(meteoUV).slice(0,3));
   console.log('[UV] firstUnixHour:', firstUnixHour, 'nowUnix:', nowUnix);
-  console.log('[UV] isDaytime:', firstPeriod.isDaytime, 'firstPeriod.startTime:', firstPeriod.startTime);
+  console.log('[UV] isDaytime:', isDaytime, 'firstPeriod.startTime:', firstPeriod.startTime);
   const uvVal = uvMap[firstHourKey] ?? uvData?.now?.uvi ?? meteoUVVal ?? null;
-  console.log('[UV] final uvVal:', uvVal, 'isDaytime:', firstPeriod.isDaytime);
+  console.log('[UV] final uvVal:', uvVal, 'isDaytime:', isDaytime);
   function uvLabel(u) {
     if (u === null || u === undefined) return null;
-    if (!firstPeriod.isDaytime) return null;
+    if (!isDaytime) return null;
     const uRound = Math.round(u);
     if (uRound <= 0)  return { text: `UV 0 · None`,      cls: 'uv-low' };
     if (uRound <= 2)  return { text: `UV ${uRound} · Low`,       cls: 'uv-low' };
@@ -1998,7 +2000,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
 
   // Conditions chips
   const chips = [];
-  if (uvInfo && firstPeriod.isDaytime) chips.push(`<div class="cond-chip ${uvInfo.cls}">${uvInfo.text}</div>`);
+  if (uvInfo && isDaytime) chips.push(`<div class="cond-chip ${uvInfo.cls}">${uvInfo.text}</div>`);
   if (curWind > 0) chips.push(`<div class="cond-chip">💨 ${curWind} mph${curGusts ? ` · Gusts ${curGusts}` : ''} ${curWindDir}</div>`);
   if (curRh !== null) chips.push(`<div class="cond-chip">💧 ${curRh}% Humidity</div>`);
   if (curPop > 0) chips.push(`<div class="cond-chip">🌧 ${curPop}% Precip</div>`);
