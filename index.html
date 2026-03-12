@@ -1756,14 +1756,15 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   }
 
   // Today's high/low — use gridData maxTemperature/minTemperature which covers full day
-  // Fall back to scanning all available hourly periods including curTemp
-  const todayStr = new Date().toDateString();
   const gridMaxTemp = parseGridSeries(gridData?.properties?.maxTemperature, true); // C→F
   const gridMinTemp = parseGridSeries(gridData?.properties?.minTemperature, true); // C→F
-  const todayKey = new Date().toISOString().slice(0, 10);
-  // Find today's grid max/min (keys are ISO hour strings like "2026-03-11T...")
+  // Use local date string to match parseGridSeries keys (which are local-time shifted)
+  const nowLocal = new Date();
+  const todayKey = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth()+1).padStart(2,'0')}-${String(nowLocal.getDate()).padStart(2,'0')}`;
   const gridMaxEntries = Object.entries(gridMaxTemp).filter(([k]) => k.startsWith(todayKey));
   const gridMinEntries = Object.entries(gridMinTemp).filter(([k]) => k.startsWith(todayKey));
+  console.log('[HIGH] todayKey:', todayKey, 'gridMaxEntries:', gridMaxEntries, 'gridMinEntries:', gridMinEntries);
+  const todayStr = new Date().toDateString();
   const todayPeriods = slice.filter(p => new Date(p.startTime).toDateString() === todayStr);
   const periodTemps  = todayPeriods.map(p => p.temperature);
   const todayHigh = gridMaxEntries.length
@@ -1772,6 +1773,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   const todayLow = gridMinEntries.length
     ? Math.round(Math.min(...gridMinEntries.map(([,v]) => v)))
     : Math.min(curTemp, ...periodTemps);
+  console.log('[HIGH] todayHigh:', todayHigh, 'todayLow:', todayLow, 'curTemp:', curTemp);
 
   // All temps for SVG curve range — snap to 5° steps
   const allTemps = slice.map(p=>p.temperature);
@@ -2245,8 +2247,8 @@ function redrawCurve(type) {
   } else if (isWind) {
     // Wind and gusts share same scale — use whichever is bigger
     const windRows = window._hourlyRows || [];
-    const allWind  = windRows.map(r => r.wind  ?? 0);
-    const allGust  = windRows.map(r => r.gust  ?? 0);
+    const allWind  = windRows.map(r => r.ws  ?? 0);
+    const allGust  = windRows.map(r => r.wg  ?? 0);
     const combined = [...allWind, ...allGust].filter(v => !isNaN(v));
     const combinedMax = Math.max(...combined);
     vMin = 0;
