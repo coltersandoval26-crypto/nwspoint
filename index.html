@@ -1755,11 +1755,23 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
       + 0.00085282*curTemp*curRh*curRh - 0.00000199*curTemp*curTemp*curRh*curRh);
   }
 
-  // Today's high/low — NWS only returns future periods so include curTemp as floor
+  // Today's high/low — use gridData maxTemperature/minTemperature which covers full day
+  // Fall back to scanning all available hourly periods including curTemp
   const todayStr = new Date().toDateString();
+  const gridMaxTemp = parseGridSeries(gridData?.properties?.maxTemperature, true); // C→F
+  const gridMinTemp = parseGridSeries(gridData?.properties?.minTemperature, true); // C→F
+  const todayKey = new Date().toISOString().slice(0, 10);
+  // Find today's grid max/min (keys are ISO hour strings like "2026-03-11T...")
+  const gridMaxEntries = Object.entries(gridMaxTemp).filter(([k]) => k.startsWith(todayKey));
+  const gridMinEntries = Object.entries(gridMinTemp).filter(([k]) => k.startsWith(todayKey));
   const todayPeriods = slice.filter(p => new Date(p.startTime).toDateString() === todayStr);
-  const todayHigh = Math.max(curTemp, ...(todayPeriods.map(p=>p.temperature)));
-  const todayLow  = Math.min(curTemp, ...(todayPeriods.map(p=>p.temperature)));
+  const periodTemps  = todayPeriods.map(p => p.temperature);
+  const todayHigh = gridMaxEntries.length
+    ? Math.round(Math.max(...gridMaxEntries.map(([,v]) => v)))
+    : Math.max(curTemp, ...periodTemps);
+  const todayLow = gridMinEntries.length
+    ? Math.round(Math.min(...gridMinEntries.map(([,v]) => v)))
+    : Math.min(curTemp, ...periodTemps);
 
   // All temps for SVG curve range — snap to 5° steps
   const allTemps = slice.map(p=>p.temperature);
@@ -1970,10 +1982,10 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   const uvVal = uvMap[firstHourKey] ?? uvData?.now?.uvi ?? meteoUVVal ?? null;
   console.log('[UV] final uvVal:', uvVal, 'isDaytime:', firstPeriod.isDaytime);
   function uvLabel(u) {
-    const uRound = Math.round(u);
     if (u === null || u === undefined) return null;
     if (!firstPeriod.isDaytime) return null;
-    if (uRound <= 0) return null;
+    const uRound = Math.round(u);
+    if (uRound <= 0)  return { text: `UV 0 · None`,      cls: 'uv-low' };
     if (uRound <= 2)  return { text: `UV ${uRound} · Low`,       cls: 'uv-low' };
     if (uRound <= 5)  return { text: `UV ${uRound} · Moderate`,  cls: 'uv-mod' };
     if (uRound <= 7)  return { text: `UV ${uRound} · High`,      cls: 'uv-high' };
@@ -2238,8 +2250,8 @@ function redrawCurve(type) {
     const combined = [...allWind, ...allGust].filter(v => !isNaN(v));
     const combinedMax = Math.max(...combined);
     vMin = 0;
-    vMax = niceMax(combinedMax, 5);
-    if (vMax < 20) vMax = 20;
+    const windCombinedMax = Math.max(...combined);
+    vMax = Math.max(niceMax(windCombinedMax, 5), 20);
 
   } else if (type === 'vis') {
     vMin = 0;
