@@ -1086,7 +1086,7 @@ async function lookupCity(displayName, lat, lon) {
     const [hourlyRes, gridRes, uvRes, meteoRes] = await Promise.all([
       fetch(hourlyUrl, { headers: { 'User-Agent': 'NWSPoint Weather App' } }),
       fetch(gridUrl,   { headers: { 'User-Agent': 'NWSPoint Weather App' } }),
-      fetch(`https://currentuvindex.com/api/v1/uvi?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}`).catch(() => null),
+      Promise.resolve(null),
       fetch(`https://api.open-meteo.com/v1/forecast?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}&hourly=surface_pressure,visibility,windgusts_10m,boundary_layer_height,cape,uv_index&wind_speed_unit=mph&timeformat=unixtime&forecast_days=7`).catch(() => null),
     ]);
     if (!hourlyRes.ok) throw new Error(`NWS hourly API error ${hourlyRes.status}`);
@@ -1767,6 +1767,8 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   const allTemps = slice.map(p=>p.temperature);
   const tMin = Math.min(...allTemps) - 5;
   const tMax = Math.max(...allTemps) + 5;
+  window._tempAxisMin = tMin;
+  window._tempAxisMax = tMax;
 
   // Build continuous hourly columns + day dividers
   let prevDate = null;
@@ -1956,8 +1958,13 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
     (uvData.forecast || []).forEach(f => { uvMap[f.time.slice(0,13)] = f.uvi; });
   }
   const firstHourKey = new Date(firstPeriod.startTime).toISOString().slice(0,13);
-  const firstUnixHour = Math.floor(new Date(firstPeriod.startTime).getTime() / 3600000) * 3600;
-  const uvVal = uvMap[firstHourKey] ?? uvData?.now?.uvi ?? meteoUV[firstUnixHour] ?? null;
+  const firstUnixHour = Math.floor(new Date(firstPeriod.startTime).getTime() / 1000 / 3600) * 3600;
+  // Find nearest open-meteo UV value within ±1 hour of the current period
+  let meteoUVVal = meteoUV[firstUnixHour] ?? meteoUV[firstUnixHour - 3600] ?? meteoUV[firstUnixHour + 3600] ?? null;
+  // Also try current real unix time in case firstPeriod is ahead
+  const nowUnix = Math.floor(Date.now() / 1000 / 3600) * 3600;
+  if (meteoUVVal === null) meteoUVVal = meteoUV[nowUnix] ?? meteoUV[nowUnix - 3600] ?? meteoUV[nowUnix + 3600] ?? null;
+  const uvVal = uvMap[firstHourKey] ?? uvData?.now?.uvi ?? meteoUVVal ?? null;
   function uvLabel(u) {
     if (u === null || !firstPeriod.isDaytime || u === 0) return null;
     if (u <= 2)  return { text: `UV ${u} · Low`,       cls: 'uv-low' };
@@ -2197,8 +2204,24 @@ function redrawCurve(type) {
 
   const finite = vals.filter(v => v !== null && !isNaN(v));
   const rawMin = Math.min(...finite), rawMax = Math.max(...finite);
-  const pad = Math.max((rawMax - rawMin) * 0.14, 1);
-  const vMin = rawMin - pad, vMax = rawMax + pad;
+
+  // Percentage metrics: always 0–100
+  const isPct = ['pop','rh','sky','lightning'].includes(type);
+  // Temp metrics: use consistent axis across all hours
+  const isTempType = ['temp','fl','dew'].includes(type);
+  // Metrics that can't go below 0
+  const hasFloor = ['wind','gust','vis','snow','ice','ceil'].includes(type);
+  let vMin, vMax;
+  if (isPct) {
+    vMin = 0; vMax = 100;
+  } else if (isTempType && window._tempAxisMin != null) {
+    vMin = window._tempAxisMin; vMax = window._tempAxisMax;
+  } else {
+    const spread = rawMax - rawMin;
+    const pad = Math.max(spread * 0.10, 1);
+    vMin = hasFloor ? Math.max(0, rawMin - pad) : rawMin - pad;
+    vMax = rawMax + pad;
+  }
   const range = vMax - vMin;
   const toY = v => PAD_T + INNER - ((v - vMin) / range) * INNER;
 
@@ -2559,7 +2582,7 @@ function triggerRefresh() {
       return Promise.all([
         fetch(props.forecastHourly, { headers: { 'User-Agent': 'NWSPoint Weather App' } }),
         fetch(props.forecastGridData, { headers: { 'User-Agent': 'NWSPoint Weather App' } }).catch(() => null),
-        fetch(`https://currentuvindex.com/api/v1/uvi?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}`).catch(() => null),
+        Promise.resolve(null),
         fetch(`https://api.open-meteo.com/v1/forecast?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}&hourly=surface_pressure,visibility,windgusts_10m,boundary_layer_height,cape,uv_index&wind_speed_unit=mph&timeformat=unixtime&forecast_days=7`).catch(() => null),
         Promise.resolve(props),
       ]);
