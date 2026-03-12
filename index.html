@@ -908,11 +908,9 @@ async function fetchAlerts(lat, lon) {
   window._alertData = [];
   try {
     const r = await fetch(`https://api.weather.gov/alerts/active?point=${parseFloat(lat).toFixed(4)},${parseFloat(lon).toFixed(4)}`, { headers: { 'User-Agent': 'NWSPoint Weather App' } });
-    console.log('[alerts] fetch status:', r.status);
     if (!r.ok) return;
     const d = await r.json();
     const features = (d.features || []).slice(0, 5);
-    console.log('[alerts] features found:', features.length);
     if (!features.length) return;
     const items = features.map((f, idx) => {
       const p = f.properties;
@@ -940,7 +938,6 @@ async function fetchAlerts(lat, lon) {
     }).join('');
     banner.innerHTML = `<div style="padding:8px 0 4px;">${items}</div>`;
     banner.style.display = 'block';
-    console.log('[alerts] _alertData:', window._alertData);
   } catch(e) { console.error('[alerts] error:', e); }
 }
 
@@ -1763,7 +1760,6 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   const todayKey = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth()+1).padStart(2,'0')}-${String(nowLocal.getDate()).padStart(2,'0')}`;
   const gridMaxEntries = Object.entries(gridMaxTemp).filter(([k]) => k.startsWith(todayKey));
   const gridMinEntries = Object.entries(gridMinTemp).filter(([k]) => k.startsWith(todayKey));
-  console.log('[HIGH] todayKey:', todayKey, 'gridMaxEntries:', gridMaxEntries, 'gridMinEntries:', gridMinEntries);
   const todayStr = new Date().toDateString();
   const todayPeriods = slice.filter(p => new Date(p.startTime).toDateString() === todayStr);
   const periodTemps  = todayPeriods.map(p => p.temperature);
@@ -1773,7 +1769,6 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   const todayLow = gridMinEntries.length
     ? Math.round(Math.min(...gridMinEntries.map(([,v]) => v)))
     : Math.min(curTemp, ...periodTemps);
-  console.log('[HIGH] todayHigh:', todayHigh, 'todayLow:', todayLow, 'curTemp:', curTemp);
 
   // All temps for SVG curve range — snap to 5° steps
   const allTemps = slice.map(p=>p.temperature);
@@ -1979,12 +1974,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
     meteoUVVal = meteoUV[firstUnixHour + off] ?? meteoUV[firstUnixHour - off] ?? meteoUV[nowUnix + off] ?? meteoUV[nowUnix - off] ?? null;
     if (meteoUVVal !== null) break;
   }
-  console.log('[UV] meteoData hourly keys:', meteoData ? Object.keys(meteoData.hourly || {}) : 'no meteoData');
-  console.log('[UV] meteoUV entry count:', Object.keys(meteoUV).length, 'sample keys:', Object.keys(meteoUV).slice(0,3));
-  console.log('[UV] firstUnixHour:', firstUnixHour, 'nowUnix:', nowUnix);
-  console.log('[UV] isDaytime:', isDaytime, 'firstPeriod.startTime:', firstPeriod.startTime);
   const uvVal = uvMap[firstHourKey] ?? uvData?.now?.uvi ?? meteoUVVal ?? null;
-  console.log('[UV] final uvVal:', uvVal, 'isDaytime:', isDaytime);
   function uvLabel(u) {
     if (u === null || u === undefined) return null;
     if (!isDaytime) return null;
@@ -1996,7 +1986,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
     if (uRound <= 10) return { text: `UV ${uRound} · Very High`, cls: 'uv-vhigh' };
     return             { text: `UV ${uRound} · Extreme`,          cls: 'uv-ext' };
   }
-  const uvInfo = uvLabel(uvVal);
+  const uvInfo = uvVal !== null && uvVal !== undefined ? uvLabel(uvVal) : null;
 
   // Conditions chips
   const chips = [];
