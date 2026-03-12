@@ -241,7 +241,7 @@ body {
 }
 
 /* ── ALERT MODAL ── */
-#alert-modal {
+#alerts-banner { width: 100%; overflow: hidden; margin-bottom: 4px; }
   display: none;
   position: fixed; inset: 0; z-index: 10000;
   background: rgba(0,0,0,0.72);
@@ -430,7 +430,9 @@ body {
   padding: 13px 18px; border-left: 3px solid;
   margin: 0 0 8px; border-radius: 14px;
   font-size: 13px; line-height: 1.45; cursor: pointer;
-  transition: opacity 0.15s, transform 0.15s; overflow: visible;
+  transition: opacity 0.15s, transform 0.15s;
+  overflow: hidden; /* contain contents, no clipping from outside */
+  width: 100%; box-sizing: border-box;
 }
 .alert-item:hover { opacity: 0.9; transform: translateX(2px); }
 .alert-item:active { transform: scale(0.99); }
@@ -438,9 +440,9 @@ body {
 .alert-watch    { background: rgba(220,140,20,0.13); border-color: #dca020; }
 .alert-advisory { background: rgba(80,160,220,0.13); border-color: #50a0dc; }
 .alert-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
-.alert-body { flex: 1; }
-.alert-event { font-weight: 700; font-family: 'Nunito', sans-serif; font-size: 14px; }
-.alert-meta  { font-size: 11px; color: var(--muted); margin-top: 2px; letter-spacing: 0.5px; }
+.alert-body { flex: 1; min-width: 0; overflow: hidden; }
+.alert-event { font-weight: 700; font-family: 'Nunito', sans-serif; font-size: 14px; word-break: break-word; white-space: normal; overflow-wrap: break-word; }
+.alert-meta  { font-size: 11px; color: var(--muted); margin-top: 2px; letter-spacing: 0.5px; word-break: break-word; }
 .alert-desc  { margin-top: 6px; color: var(--text2); display: none; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
 .alert-item.expanded .alert-desc { display: block; }
 
@@ -605,6 +607,8 @@ body {
 
 /* Feels Like toggle */
 .wx-temp-wrap { display:flex; flex-direction:column; gap:4px; }
+.wx-temp { transition: color 0.35s ease, opacity 0.2s ease; }
+.wx-temp.switching { opacity: 0; }
 .wx-feels-toggle { display:flex; gap:4px; margin-top:8px; }
 .feels-btn {
   background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
@@ -756,22 +760,22 @@ footer { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--mute
     <div class="popular-wrap">
       <div class="popular-label">Popular Cities</div>
       <div class="popular-pills">
-        <span class="pill" onclick="lookupCity('New York, NY', 40.78, 73.97)">New York, NY</span>
-        <span class="pill" onclick="lookupCity('Los Angeles, CA', 34.06778, 118.24167)">Los Angeles, CA</span>
-        <span class="pill" onclick="lookupCity('Chicago, IL', 41.78, 87.76)">Chicago, IL</span>
-        <span class="pill" onclick="lookupCity('Houston, TX', 29.64, -95.28)">Houston, TX</span>
-        <span class="pill" onclick="lookupCity('Phoenix, AZ', 33.427799, -112.003465)">Phoenix, AZ</span>
-        <span class="pill" onclick="lookupCity('Miami, FL', 25.79, -80.32)">Miami, FL</span>
-        <span class="pill" onclick="lookupCity('Denver, CO', 39.71, -104.76)">Denver, CO</span>
-        <span class="pill" onclick="lookupCity('Seattle, WA', 47.54548, -122.3147)">Seattle, WA</span>
-        <span class="pill" onclick="lookupCity('Nashville, TN', 36.12, -86.69)">Nashville, TN</span>
-        <span class="pill" onclick="lookupCity('New Orleans, LA', 30.05, -90.03)">New Orleans, LA</span>
-        <span class="pill" onclick="lookupCity('Las Vegas, NV', 36.21205, -115.19395)">Las Vegas, NV</span>
-        <span class="pill" onclick="lookupCity('Atlanta, GA', 33.64, -84.43)">Atlanta, GA</span>
-        <span class="pill" onclick="lookupCity('Boston, MA', 42.3601, -71.01)">Boston, MA</span>
-        <span class="pill" onclick="lookupCity('San Francisco, CA', 37.77056, -122.42694)">San Francisco, CA</span>
-        <span class="pill" onclick="lookupCity('Minneapolis, MN', 44.88, -93.23)">Minneapolis, MN</span>
-        <span class="pill" onclick="lookupCity('Austin, TX', 30.32, -97.76)">Austin, TX</span>
+        <span class="pill" onclick="lookupCity('New York, NY', 40.7549, -73.9840)">New York, NY</span>
+        <span class="pill" onclick="lookupCity('Los Angeles, CA', 34.0522, -118.2437)">Los Angeles, CA</span>
+        <span class="pill" onclick="lookupCity('Chicago, IL', 41.8781, -87.6298)">Chicago, IL</span>
+        <span class="pill" onclick="lookupCity('Houston, TX', 29.7604, -95.3698)">Houston, TX</span>
+        <span class="pill" onclick="lookupCity('Phoenix, AZ', 33.4734, -112.0493)">Phoenix, AZ</span>
+        <span class="pill" onclick="lookupCity('Miami, FL', 25.7617, -80.1918)">Miami, FL</span>
+        <span class="pill" onclick="lookupCity('Denver, CO', 39.7392, -104.9847)">Denver, CO</span>
+        <span class="pill" onclick="lookupCity('Seattle, WA', 47.6062, -122.3321)">Seattle, WA</span>
+        <span class="pill" onclick="lookupCity('Nashville, TN', 36.1627, -86.7816)">Nashville, TN</span>
+        <span class="pill" onclick="lookupCity('New Orleans, LA', 29.9765, -90.0794)">New Orleans, LA</span>
+        <span class="pill" onclick="lookupCity('Las Vegas, NV', 36.1749, -115.1372)">Las Vegas, NV</span>
+        <span class="pill" onclick="lookupCity('Atlanta, GA', 33.7490, -84.3880)">Atlanta, GA</span>
+        <span class="pill" onclick="lookupCity('Boston, MA', 42.3601, -71.0589)">Boston, MA</span>
+        <span class="pill" onclick="lookupCity('San Francisco, CA', 37.7749, -122.4194)">San Francisco, CA</span>
+        <span class="pill" onclick="lookupCity('Minneapolis, MN', 44.9778, -93.2650)">Minneapolis, MN</span>
+        <span class="pill" onclick="lookupCity('Austin, TX', 30.2672, -97.7431)">Austin, TX</span>
       </div>
     </div>
 
@@ -919,7 +923,7 @@ async function fetchAlerts(lat, lon) {
         </div>
       </div>`;
     }).join('');
-    banner.innerHTML = `<div style="padding-top:12px;">${items}</div>`;
+    banner.innerHTML = `<div style="padding:8px 0 4px;">${items}</div>`;
     banner.style.display = 'block';
   } catch { /* silently ignore */ }
 }
@@ -1959,6 +1963,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
         <div class="wx-temp-wrap">
           <div class="wx-temp" id="wx-temp-actual" data-temp="${curTemp}">${curTemp}°</div>
           <div class="wx-temp wx-temp-feels" id="wx-temp-feels" data-temp="${feelsLike}" style="display:none">${feelsLike}°</div>
+          <div id="wx-mode-label" style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--cyan);text-transform:uppercase;opacity:0;transition:opacity 0.3s ease;height:14px;">ACTUAL TEMP</div>
           <div class="wx-feels-toggle">
             <button class="feels-btn active" id="btn-actual" onclick="toggleFeels('actual')">Actual</button>
             <button class="feels-btn" id="btn-feels" onclick="toggleFeels('feels')">Feels Like</button>
@@ -2443,31 +2448,46 @@ function toggleFeels(mode) {
   const btnF   = document.getElementById('btn-feels');
   if (!actual || !feels) return;
 
-  if (mode === 'actual') {
-    actual.style.display = ''; feels.style.display = 'none';
-    if (btnA) { btnA.classList.add('active'); btnF.classList.remove('active'); }
-    const t = parseInt(actual.dataset.temp);
-    actual.style.color = tempColorJs(isNaN(t) ? 60 : t);
-    document.querySelectorAll('.hour-col[data-pop]').forEach((col, i) => {
-      const r = window._hourlyRows?.[i];
-      if (!r) return;
-      const el = col.querySelector('.h-temp');
-      if (el) { el.textContent = r.t + '°'; el.style.color = tempColorJs(r.t); }
-    });
-    redrawCurve('temp');
-  } else {
-    actual.style.display = 'none'; feels.style.display = '';
-    if (btnF) { btnF.classList.add('active'); btnA.classList.remove('active'); }
-    const fl = parseInt(feels.dataset.temp);
-    feels.style.color = tempColorJs(isNaN(fl) ? 60 : fl);
-    document.querySelectorAll('.hour-col[data-pop]').forEach((col, i) => {
-      const r = window._hourlyRows?.[i];
-      if (!r) return;
-      const el = col.querySelector('.h-temp');
-      if (el) { el.textContent = r.fl + '°'; el.style.color = tempColorJs(r.fl); }
-    });
-    redrawCurve('fl');
-  }
+  // Get the currently visible element to flash
+  const current = mode === 'actual' ? actual : feels;
+  const other   = mode === 'actual' ? feels  : actual;
+
+  // Flash transition: fade out old, swap, fade in new
+  other.classList.add('switching');
+  setTimeout(() => {
+    if (mode === 'actual') {
+      actual.style.display = ''; feels.style.display = 'none';
+      if (btnA) { btnA.classList.add('active'); btnF.classList.remove('active'); }
+      const t = parseInt(actual.dataset.temp);
+      actual.style.color = tempColorJs(isNaN(t) ? 60 : t);
+      // update label
+      const lbl = document.getElementById('wx-mode-label');
+      if (lbl) { lbl.textContent = 'ACTUAL TEMP'; lbl.style.opacity = '1'; setTimeout(() => { if(lbl) lbl.style.opacity = '0'; }, 1800); }
+      document.querySelectorAll('.hour-col[data-pop]').forEach((col, i) => {
+        const r = window._hourlyRows?.[i];
+        if (!r) return;
+        const el = col.querySelector('.h-temp');
+        if (el) { el.textContent = r.t + '°'; el.style.color = tempColorJs(r.t); }
+      });
+      redrawCurve('temp');
+    } else {
+      actual.style.display = 'none'; feels.style.display = '';
+      if (btnF) { btnF.classList.add('active'); btnA.classList.remove('active'); }
+      const fl = parseInt(feels.dataset.temp);
+      feels.style.color = tempColorJs(isNaN(fl) ? 60 : fl);
+      // update label
+      const lbl = document.getElementById('wx-mode-label');
+      if (lbl) { lbl.textContent = 'FEELS LIKE'; lbl.style.opacity = '1'; setTimeout(() => { if(lbl) lbl.style.opacity = '0'; }, 1800); }
+      document.querySelectorAll('.hour-col[data-pop]').forEach((col, i) => {
+        const r = window._hourlyRows?.[i];
+        if (!r) return;
+        const el = col.querySelector('.h-temp');
+        if (el) { el.textContent = r.fl + '°'; el.style.color = tempColorJs(r.fl); }
+      });
+      redrawCurve('fl');
+    }
+    other.classList.remove('switching');
+  }, 120);
 }
 
 // JS version of tempColor for dynamic use
