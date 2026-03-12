@@ -907,9 +907,11 @@ async function fetchAlerts(lat, lon) {
   window._alertData = [];
   try {
     const r = await fetch(`https://api.weather.gov/alerts/active?point=${parseFloat(lat).toFixed(4)},${parseFloat(lon).toFixed(4)}`, { headers: { 'User-Agent': 'NWSPoint Weather App' } });
+    console.log('[alerts] fetch status:', r.status);
     if (!r.ok) return;
     const d = await r.json();
     const features = (d.features || []).slice(0, 5);
+    console.log('[alerts] features found:', features.length);
     if (!features.length) return;
     const items = features.map((f, idx) => {
       const p = f.properties;
@@ -920,11 +922,11 @@ async function fetchAlerts(lat, lon) {
       const desc = (p.description || '').trim();
       const instr = (p.instruction || '').trim();
       const fullText = [desc, instr].filter(Boolean).join('\n\n');
+      console.log(`[alerts] idx=${idx} event="${event}" desc.length=${desc.length} fullText.length=${fullText.length}`);
       const cls = sev === 'extreme' || sev === 'severe' ? 'alert-warning' :
                   sev === 'moderate' ? 'alert-watch' : 'alert-advisory';
       const icon = cls === 'alert-warning' ? '🚨' : cls === 'alert-watch' ? '⚠️' : 'ℹ️';
       const meta = [onset && `Onset: ${onset}`, ends && `Ends: ${ends}`].filter(Boolean).join(' · ');
-      // Store full data by index — never embed long text in onclick attribute
       window._alertData[idx] = { icon, event, meta, desc: fullText };
       return `<div class="alert-item ${cls}" onclick="openAlertModal(${idx})">
         <div class="alert-icon">${icon}</div>
@@ -937,7 +939,8 @@ async function fetchAlerts(lat, lon) {
     }).join('');
     banner.innerHTML = `<div style="padding:8px 0 4px;">${items}</div>`;
     banner.style.display = 'block';
-  } catch { /* silently ignore */ }
+    console.log('[alerts] _alertData:', window._alertData);
+  } catch(e) { console.error('[alerts] error:', e); }
 }
 
 // ─── PULL TO REFRESH ─────────────────────────────────────────────────────────
