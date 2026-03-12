@@ -242,6 +242,7 @@ body {
 
 /* ── ALERT MODAL ── */
 #alerts-banner { width: 100%; overflow: hidden; margin-bottom: 4px; }
+#alert-modal {
   display: none;
   position: fixed; inset: 0; z-index: 10000;
   background: rgba(0,0,0,0.72);
@@ -897,29 +898,34 @@ async function fetchAlerts(lat, lon) {
   if (!banner) return;
   banner.style.display = 'none';
   banner.innerHTML = '';
+  window._alertData = [];
   try {
     const r = await fetch(`https://api.weather.gov/alerts/active?point=${parseFloat(lat).toFixed(4)},${parseFloat(lon).toFixed(4)}`, { headers: { 'User-Agent': 'NWSPoint Weather App' } });
     if (!r.ok) return;
     const d = await r.json();
     const features = (d.features || []).slice(0, 5);
     if (!features.length) return;
-    const items = features.map(f => {
+    const items = features.map((f, idx) => {
       const p = f.properties;
       const sev = (p.severity || '').toLowerCase();
       const event = p.event || 'Weather Alert';
       const onset = p.onset ? new Date(p.onset).toLocaleString('en-US',{weekday:'short',hour:'numeric',minute:'2-digit'}) : '';
       const ends  = p.ends  ? new Date(p.ends).toLocaleString('en-US',{weekday:'short',hour:'numeric',minute:'2-digit'}) : '';
       const desc = (p.description || '').trim();
+      const instr = (p.instruction || '').trim();
+      const fullText = [desc, instr].filter(Boolean).join('\n\n');
       const cls = sev === 'extreme' || sev === 'severe' ? 'alert-warning' :
                   sev === 'moderate' ? 'alert-watch' : 'alert-advisory';
       const icon = cls === 'alert-warning' ? '🚨' : cls === 'alert-watch' ? '⚠️' : 'ℹ️';
       const meta = [onset && `Onset: ${onset}`, ends && `Ends: ${ends}`].filter(Boolean).join(' · ');
-      return `<div class="alert-item ${cls}" onclick="openAlertModal('${icon}','${event.replace(/'/g,"\\'")}','${meta.replace(/'/g,"\\'")}',${JSON.stringify(desc)})">
+      // Store full data by index — never embed long text in onclick attribute
+      window._alertData[idx] = { icon, event, meta, desc: fullText };
+      return `<div class="alert-item ${cls}" onclick="openAlertModal(${idx})">
         <div class="alert-icon">${icon}</div>
         <div class="alert-body">
           <div class="alert-event">${event}</div>
           ${meta ? `<div class="alert-meta">${meta}</div>` : ''}
-          <div class="alert-tap-hint" style="font-size:11px;color:var(--muted);margin-top:3px;">Tap for details</div>
+          <div class="alert-tap-hint" style="font-size:11px;color:var(--muted);margin-top:3px;">Tap for details →</div>
         </div>
       </div>`;
     }).join('');
@@ -2607,11 +2613,13 @@ document.getElementById('main-search').addEventListener('keydown', e => {
   if (e.key === 'Enter') doMainSearch();
 });
 
-function openAlertModal(icon, event, meta, desc) {
-  document.getElementById('amd-icon').textContent  = icon;
-  document.getElementById('amd-event').textContent = event;
-  document.getElementById('amd-meta').textContent  = meta;
-  document.getElementById('amd-desc').textContent  = desc;
+function openAlertModal(idx) {
+  const data = window._alertData?.[idx];
+  if (!data) return;
+  document.getElementById('amd-icon').textContent  = data.icon;
+  document.getElementById('amd-event').textContent = data.event;
+  document.getElementById('amd-meta').textContent  = data.meta;
+  document.getElementById('amd-desc').textContent  = data.desc;
   const m = document.getElementById('alert-modal');
   m.classList.add('open');
   m.scrollTop = 0;
