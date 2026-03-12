@@ -745,7 +745,7 @@ footer { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--mute
 </div>
 <canvas id="rain-canvas"></canvas>
 <canvas id="sun" style="position:fixed;z-index:2;pointer-events:none;opacity:0;transition:opacity 3s ease;border-radius:50%;"></canvas>
-<canvas id="moon" style="position:fixed;z-index:2;pointer-events:none;opacity:0;transition:opacity 3s ease;"></canvas>
+<canvas id="moon" style="position:fixed;z-index:2;pointer-events:none;opacity:0;transition:opacity 3s ease;background:transparent;"></canvas>
 <div class="horizon-glow"></div>
 <div class="app">
 
@@ -1448,13 +1448,13 @@ function applySkyPhase(hour, weatherSf) {
       const R = 75; // moon radius in canvas px (fixed, not tied to size)
 
       // Outer halo — now has plenty of room to fade before canvas edge
-      const halo = ctx.createRadialGradient(cx, cy, R * 0.6, cx, cy, R * 3.0);
-      halo.addColorStop(0,   'rgba(255,240,170,0.18)');
-      halo.addColorStop(0.4, 'rgba(220,200,120,0.07)');
-      halo.addColorStop(0.8, 'rgba(200,170,80,0.02)');
+      const halo = ctx.createRadialGradient(cx, cy, R * 0.6, cx, cy, R * 2.4);
+      halo.addColorStop(0,   'rgba(255,240,170,0.15)');
+      halo.addColorStop(0.3, 'rgba(220,200,120,0.06)');
+      halo.addColorStop(0.6, 'rgba(200,170,80,0.02)');
       halo.addColorStop(1,   'rgba(200,170,80,0)');
       ctx.fillStyle = halo;
-      ctx.beginPath(); ctx.arc(cx, cy, R * 3.0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, R * 2.4, 0, Math.PI * 2); ctx.fill();
 
       // Moon disc base — warm ivory
       const disc = ctx.createRadialGradient(cx - R*0.15, cy - R*0.2, 0, cx, cy, R);
@@ -1755,18 +1755,16 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
       + 0.00085282*curTemp*curRh*curRh - 0.00000199*curTemp*curTemp*curRh*curRh);
   }
 
-  // Today's high/low from first 24 hours
-  const today24 = slice.filter(p => {
-    const h = (new Date(p.startTime) - new Date(firstPeriod.startTime)) / 3600000;
-    return h < 24;
-  });
-  const todayHigh = today24.length ? Math.max(...today24.map(p=>p.temperature)) : curTemp;
-  const todayLow  = today24.length ? Math.min(...today24.map(p=>p.temperature)) : curTemp;
+  // Today's high/low from the full calendar day
+  const todayStr = new Date().toDateString();
+  const todayPeriods = slice.filter(p => new Date(p.startTime).toDateString() === todayStr);
+  const todayHigh = todayPeriods.length ? Math.max(...todayPeriods.map(p=>p.temperature)) : curTemp;
+  const todayLow  = todayPeriods.length ? Math.min(...todayPeriods.map(p=>p.temperature)) : curTemp;
 
-  // All temps for SVG curve range
+  // All temps for SVG curve range — snap to 5° steps
   const allTemps = slice.map(p=>p.temperature);
-  const tMin = Math.min(...allTemps) - 5;
-  const tMax = Math.max(...allTemps) + 5;
+  const tMin = Math.floor((Math.min(...allTemps) - 5) / 5) * 5;
+  const tMax = Math.ceil((Math.max(...allTemps) + 5) / 5) * 5;
   window._tempAxisMin = tMin;
   window._tempAxisMax = tMax;
 
@@ -1950,8 +1948,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   // Trigger atmosphere effects
   updateAtmosphere(firstPeriod.shortForecast, curPop, firstPeriod.startTime);
 
-  // UV index from currentuvindex.com (free, no key)
-  // Build hourKey→uvi map from forecast array
+  // UV — Open-Meteo fallback (currentuvindex.com removed, domain dead)
   const uvMap = {};
   if (uvData) {
     if (uvData.now) uvMap[uvData.now.time.slice(0,13)] = uvData.now.uvi;
@@ -1959,19 +1956,26 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   }
   const firstHourKey = new Date(firstPeriod.startTime).toISOString().slice(0,13);
   const firstUnixHour = Math.floor(new Date(firstPeriod.startTime).getTime() / 1000 / 3600) * 3600;
-  // Find nearest open-meteo UV value within ±1 hour of the current period
-  let meteoUVVal = meteoUV[firstUnixHour] ?? meteoUV[firstUnixHour - 3600] ?? meteoUV[firstUnixHour + 3600] ?? null;
-  // Also try current real unix time in case firstPeriod is ahead
   const nowUnix = Math.floor(Date.now() / 1000 / 3600) * 3600;
-  if (meteoUVVal === null) meteoUVVal = meteoUV[nowUnix] ?? meteoUV[nowUnix - 3600] ?? meteoUV[nowUnix + 3600] ?? null;
+  // Search ±2 hours for a meteoUV match
+  let meteoUVVal = null;
+  for (let off = 0; off <= 7200; off += 3600) {
+    meteoUVVal = meteoUV[firstUnixHour + off] ?? meteoUV[firstUnixHour - off] ?? meteoUV[nowUnix + off] ?? meteoUV[nowUnix - off] ?? null;
+    if (meteoUVVal !== null) break;
+  }
+  console.log('[UV] meteoUV keys sample:', Object.keys(meteoUV).slice(0,3), 'firstUnixHour:', firstUnixHour, 'nowUnix:', nowUnix, 'found:', meteoUVVal);
   const uvVal = uvMap[firstHourKey] ?? uvData?.now?.uvi ?? meteoUVVal ?? null;
+  console.log('[UV] final uvVal:', uvVal, 'isDaytime:', firstPeriod.isDaytime);
   function uvLabel(u) {
-    if (u === null || !firstPeriod.isDaytime || u === 0) return null;
-    if (u <= 2)  return { text: `UV ${u} · Low`,       cls: 'uv-low' };
-    if (u <= 5)  return { text: `UV ${u} · Moderate`,  cls: 'uv-mod' };
-    if (u <= 7)  return { text: `UV ${u} · High`,      cls: 'uv-high' };
-    if (u <= 10) return { text: `UV ${u} · Very High`, cls: 'uv-vhigh' };
-    return       { text: `UV ${u} · Extreme`,          cls: 'uv-ext' };
+    const uRound = Math.round(u);
+    if (u === null || u === undefined) return null;
+    if (!firstPeriod.isDaytime) return null;
+    if (uRound <= 0) return null;
+    if (uRound <= 2)  return { text: `UV ${uRound} · Low`,       cls: 'uv-low' };
+    if (uRound <= 5)  return { text: `UV ${uRound} · Moderate`,  cls: 'uv-mod' };
+    if (uRound <= 7)  return { text: `UV ${uRound} · High`,      cls: 'uv-high' };
+    if (uRound <= 10) return { text: `UV ${uRound} · Very High`, cls: 'uv-vhigh' };
+    return             { text: `UV ${uRound} · Extreme`,          cls: 'uv-ext' };
   }
   const uvInfo = uvLabel(uvVal);
 
@@ -2205,23 +2209,60 @@ function redrawCurve(type) {
   const finite = vals.filter(v => v !== null && !isNaN(v));
   const rawMin = Math.min(...finite), rawMax = Math.max(...finite);
 
-  // Percentage metrics: always 0–100
-  const isPct = ['pop','rh','sky','lightning'].includes(type);
-  // Temp metrics: use consistent axis across all hours
+  // Helper: round up to nearest nice step
+  function niceMax(v, step) { return Math.ceil(v / step) * step; }
+  function niceMin(v, step) { return Math.floor(v / step) * step; }
+
+  const isPct     = ['pop','rh','sky','lightning'].includes(type);
   const isTempType = ['temp','fl','dew'].includes(type);
-  // Metrics that can't go below 0
-  const hasFloor = ['wind','gust','vis','snow','ice','ceil'].includes(type);
+  const isWind    = ['wind','gust'].includes(type);
+
   let vMin, vMax;
+
   if (isPct) {
     vMin = 0; vMax = 100;
+
   } else if (isTempType && window._tempAxisMin != null) {
-    vMin = window._tempAxisMin; vMax = window._tempAxisMax;
+    // Snap temp axis to nearest 5°
+    vMin = niceMin(window._tempAxisMin, 5);
+    vMax = niceMax(window._tempAxisMax, 5);
+
+  } else if (isWind) {
+    // Wind and gusts share same scale — use whichever is bigger
+    const windRows = window._hourlyRows || [];
+    const allWind  = windRows.map(r => r.wind  ?? 0);
+    const allGust  = windRows.map(r => r.gust  ?? 0);
+    const combined = [...allWind, ...allGust].filter(v => !isNaN(v));
+    const combinedMax = Math.max(...combined);
+    vMin = 0;
+    vMax = niceMax(combinedMax, 5);
+    if (vMax < 10) vMax = 10;
+
+  } else if (type === 'vis') {
+    vMin = 0;
+    vMax = niceMax(Math.max(rawMax, 10), 5);
+
+  } else if (type === 'pres') {
+    // Pressure in inHg — nice 0.5 steps
+    const step = 0.5;
+    vMin = niceMin(rawMin, step) - step;
+    vMax = niceMax(rawMax, step) + step;
+
+  } else if (type === 'ceil') {
+    vMin = 0;
+    vMax = niceMax(rawMax, 5000);
+    if (vMax < 10000) vMax = 10000;
+
+  } else if (type === 'snow' || type === 'ice') {
+    vMin = 0;
+    vMax = niceMax(Math.max(rawMax, 1), 0.5);
+
   } else {
-    const spread = rawMax - rawMin;
-    const pad = Math.max(spread * 0.10, 1);
-    vMin = hasFloor ? Math.max(0, rawMin - pad) : rawMin - pad;
+    const pad = Math.max((rawMax - rawMin) * 0.10, 1);
+    vMin = rawMin - pad;
     vMax = rawMax + pad;
   }
+
   const range = vMax - vMin;
   const toY = v => PAD_T + INNER - ((v - vMin) / range) * INNER;
 
