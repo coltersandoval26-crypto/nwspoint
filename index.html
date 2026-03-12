@@ -1794,9 +1794,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   // Sub-hour offset: how far into the current hour we are (0–1)
   // This shifts the curve so it starts at the current minute, not top of hour
   const nowMinFrac = new Date().getMinutes() / 60;
-  const minuteOffsetPx = nowMinFrac * COL_SLOT; // px already elapsed in current hour
-  // Extra left padding so the first point label is never clipped at the edge
-  const SVG_PAD_LEFT = Math.ceil(minuteOffsetPx) + 4;
+  const minuteOffsetPx = nowMinFrac * COL_SLOT;
 
   // Store all hourly data for curve redraws
   window._hourlyRows = [];
@@ -1923,7 +1921,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
     }
 
     // SVG x = center of this column, shifted left by how far into the hour we are
-    const x = xOffset + COL_SLOT / 2 - minuteOffsetPx + SVG_PAD_LEFT;
+    const x = xOffset + COL_SLOT / 2 - minuteOffsetPx;
     const y = 60 - ((t - tMin) / (tMax - tMin)) * 52;
     // Store unix ms of this period's start for tooltip time interpolation
     svgPoints.push({ x, y, t, fl, pop, ws, rh, dew, sky, visMiles, pressInHg, unixMs: d.getTime() });
@@ -1952,8 +1950,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   });
 
   // SVG total width = final xOffset (sum of all cols + day dividers)
-  window._svgPadLeft = SVG_PAD_LEFT;
-  const svgW = xOffset + SVG_PAD_LEFT;
+  const svgW = xOffset;
   window._svgPoints = svgPoints;
   window._svgW = svgW;
   window._tMin = tMin;
@@ -2071,7 +2068,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
         </div>
       </div>
     </div>
-    ${chipsHtml ? `<div style="padding: 0 0 8px; margin-top: -4px;">${chipsHtml.replace(/^<div class="conditions-row">/, '<div class="conditions-row" style="padding:0;">').replace(/<\/div>$/, '</div>')}</div>` : ''}
+    ${chipsHtml ? `<div style="padding: 0 0 8px; margin-top: -12px;">${chipsHtml.replace(/^<div class="conditions-row">/, '<div class="conditions-row" style="padding:0;">').replace(/<\/div>$/, '</div>')}</div>` : ''}
 
     <!-- Hourly timeline -->
     <div class="section-card">
@@ -2087,11 +2084,11 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
       <!-- Chart area: Y-axis labels + scrollable SVG -->
       <div id="chart-outer" style="position:relative; margin-bottom:8px;">
         <div style="display:flex; gap:0;">
-          <div id="chart-y-axis" style="width:40px; flex-shrink:0; position:relative; height:160px;"></div>
+          <div id="chart-y-axis" style="width:52px; flex-shrink:0; position:relative; height:160px;"></div>
           <div class="curve-wrap" id="curve-wrap" style="flex:1; overflow-x:hidden; height:160px; position:relative;">
             <div id="curve-scroll-inner" style="min-width:${svgW}px; position:relative; height:160px;">
               <svg id="hourly-curve-svg" width="${svgW}" height="160" style="display:block;"></svg>
-              <div id="chart-now-line" style="position:absolute;top:0;width:2px;height:160px;background:rgba(100,200,255,0.5);pointer-events:none;left:${COL_SLOT/2 - minuteOffsetPx + SVG_PAD_LEFT}px;box-shadow:0 0 6px rgba(100,200,255,0.4);"></div>
+              <div id="chart-now-line" style="position:absolute;top:0;width:2px;height:160px;background:rgba(100,200,255,0.5);pointer-events:none;left:${COL_SLOT/2 - minuteOffsetPx}px;box-shadow:0 0 6px rgba(100,200,255,0.4);"></div>
               <div id="chart-hit-area" style="position:absolute;inset:0;cursor:crosshair;"></div>
             </div>
             <div id="chart-crosshair" style="position:absolute;top:0;width:1px;height:160px;background:rgba(255,255,255,0.35);pointer-events:none;display:none;box-shadow:0 0 8px rgba(255,255,255,0.2);"></div>
@@ -2498,7 +2495,7 @@ function redrawCurve(type) {
   // Y-axis labels
   if (yAxis) {
     yAxis.style.height = CHART_H + 'px';
-    yAxis.style.width  = '40px';
+    yAxis.style.width  = '52px';
     yAxis.innerHTML = yAxisItems.map(l =>
       `<div style="position:absolute;right:5px;top:${l.y-7}px;font-family:'Space Mono',monospace;font-size:9px;color:rgba(190,180,160,0.5);white-space:nowrap;text-align:right;">${l.lbl}</div>`
     ).join('');
@@ -2818,9 +2815,8 @@ function updateBadge() {
   const nowLine = document.getElementById('chart-now-line');
   if (nowLine) {
     const COL_SLOT = 70;
-    const pad = window._svgPadLeft || 0;
     const frac = (new Date().getMinutes() * 60 + new Date().getSeconds()) / 3600;
-    nowLine.style.left = (COL_SLOT / 2 - frac * COL_SLOT + pad) + 'px';
+    nowLine.style.left = (COL_SLOT / 2 - frac * COL_SLOT) + 'px';
   }
 }
 
