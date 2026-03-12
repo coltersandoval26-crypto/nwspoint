@@ -1784,6 +1784,11 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   const COL_SLOT = 70; // must match CSS .hour-col width (gap is 0)
   const DIV_W = 0;     // day-dividers are width:0 overflow:visible — no layout width
 
+  // Sub-hour offset: how far into the current hour we are (0–1)
+  // This shifts the curve so it starts at the current minute, not top of hour
+  const nowMinFrac = new Date().getMinutes() / 60;
+  const minuteOffsetPx = nowMinFrac * COL_SLOT; // px already elapsed in current hour
+
   // Store all hourly data for curve redraws
   window._hourlyRows = [];
   let xOffset = 0; // running x position tracking both cols and day dividers
@@ -1872,8 +1877,8 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
       prevDate = dateStr;
     }
 
-    // SVG x = center of this column in the scrollable space
-    const x = xOffset + COL_SLOT / 2;
+    // SVG x = center of this column, shifted left by how far into the hour we are
+    const x = xOffset + COL_SLOT / 2 - minuteOffsetPx;
     const y = 60 - ((t - tMin) / (tMax - tMin)) * 52;
     svgPoints.push({ x, y, t, fl, pop, ws, rh, dew, sky, visMiles, pressInHg });
     xOffset += COL_SLOT;
@@ -2036,6 +2041,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
           <div class="curve-wrap" id="curve-wrap" style="flex:1; overflow-x:hidden; height:160px; position:relative;">
             <div id="curve-scroll-inner" style="min-width:${svgW}px; position:relative; height:160px;">
               <svg id="hourly-curve-svg" width="${svgW}" height="160" style="display:block;"></svg>
+              <div id="chart-now-line" style="position:absolute;top:0;width:2px;height:160px;background:rgba(100,200,255,0.5);pointer-events:none;left:${COL_SLOT/2 - minuteOffsetPx}px;box-shadow:0 0 6px rgba(100,200,255,0.4);"></div>
               <div id="chart-hit-area" style="position:absolute;inset:0;cursor:crosshair;"></div>
             </div>
             <div id="chart-crosshair" style="position:absolute;top:0;width:1px;height:160px;background:rgba(255,255,255,0.35);pointer-events:none;display:none;box-shadow:0 0 8px rgba(255,255,255,0.2);"></div>
@@ -2685,6 +2691,13 @@ function updateBadge() {
   const liveText = document.getElementById('live-text');
   if (!liveText) return;
   liveText.textContent = `LIVE · ${liveClockStr()}`;
+  // Nudge the now-line to current minute within the hour
+  const nowLine = document.getElementById('chart-now-line');
+  if (nowLine) {
+    const COL_SLOT = 70;
+    const frac = (new Date().getMinutes() * 60 + new Date().getSeconds()) / 3600;
+    nowLine.style.left = (COL_SLOT / 2 - frac * COL_SLOT) + 'px';
+  }
 }
 
 // Stop refresh when user goes back to landing
