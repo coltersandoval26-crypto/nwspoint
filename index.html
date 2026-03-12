@@ -2239,7 +2239,7 @@ function redrawCurve(type) {
     const combinedMax = Math.max(...combined);
     vMin = 0;
     vMax = niceMax(combinedMax, 5);
-    if (vMax < 10) vMax = 10;
+    if (vMax < 20) vMax = 20;
 
   } else if (type === 'vis') {
     vMin = 0;
@@ -2291,16 +2291,29 @@ function redrawCurve(type) {
   });
   const areaD = pathD + ` L ${pts[pts.length-1].x} ${CHART_H} L ${pts[0].x} ${CHART_H} Z`;
 
-  // Horizontal grid lines (4 levels)
-  const LEVELS = 4;
+  // Compute nice grid step based on range
+  function niceStep(range) {
+    const rough = range / 4;
+    const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+    const norm = rough / mag;
+    let step;
+    if (norm <= 1) step = mag;
+    else if (norm <= 2) step = 2 * mag;
+    else if (norm <= 5) step = 5 * mag;
+    else step = 10 * mag;
+    return step;
+  }
+  const gridStep = niceStep(range);
+  const gridStart = Math.ceil(vMin / gridStep) * gridStep;
+
+  // Horizontal grid lines at nice round values
   let hGridLines = '';
   const yAxisItems = [];
-  for (let i = 0; i <= LEVELS; i++) {
-    const frac = i / LEVELS;
-    const y = PAD_T + INNER * (1 - frac);
-    const val = vMin + range * frac;
-    const lbl = fmtVal(type, val);
-    if (i > 0) hGridLines += `<line x1="0" y1="${y}" x2="${window._svgW || 9999}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-width="1" stroke-dasharray="2,7"/>`;
+  for (let v = gridStart; v <= vMax + gridStep * 0.01; v += gridStep) {
+    if (v < vMin) continue;
+    const y = toY(v);
+    const lbl = fmtVal(type, v);
+    if (v > vMin) hGridLines += `<line x1="0" y1="${y}" x2="${window._svgW || 9999}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-width="1" stroke-dasharray="2,7"/>`;
     yAxisItems.push({ y, lbl });
   }
 
