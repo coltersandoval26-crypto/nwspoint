@@ -1923,7 +1923,8 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
     // SVG x = center of this column, shifted left by how far into the hour we are
     const x = xOffset + COL_SLOT / 2 - minuteOffsetPx;
     const y = 60 - ((t - tMin) / (tMax - tMin)) * 52;
-    svgPoints.push({ x, y, t, fl, pop, ws, rh, dew, sky, visMiles, pressInHg });
+    // Store unix ms of this period's start for tooltip time interpolation
+    svgPoints.push({ x, y, t, fl, pop, ws, rh, dew, sky, visMiles, pressInHg, unixMs: d.getTime() });
     xOffset += COL_SLOT;
 
     const popDisplay = pop > 0 ? pop+'%' : '—';
@@ -2377,6 +2378,7 @@ function redrawCurve(type) {
     v: vals[i],
     time: r.timeStr,
     dateStr: r.dateStr,
+    unixMs: basePts[i]?.unixMs ?? null,
   }));
 
   // Store for hover
@@ -2584,29 +2586,23 @@ function wireChartHover() {
     if (tooltip && ttTime && ttVal) {
       const color = meta?.isTemp ? '#e8a84a' : (meta?.color || '#e8a84a');
 
-      // Interpolate value between this point and next based on cursor x within the column
+      // Interpolate value + time between this point and next based on exact cursor x
       let displayVal = pt.v;
       let timeLabel = pt.time;
       const nextPt = pts[best + 1];
-      if (nextPt && nextPt.v !== null && !isNaN(nextPt.v) && pt.v !== null && !isNaN(pt.v)) {
-        const colFrac = Math.max(0, Math.min(1, (relX - pt.x) / (nextPt.x - pt.x)));
+      if (nextPt && pt.unixMs !== null && nextPt.unixMs !== null &&
+          nextPt.v !== null && !isNaN(nextPt.v) && pt.v !== null && !isNaN(pt.v)) {
+        // colFrac: 0 = at this point's x, 1 = at next point's x
+        const span = nextPt.x - pt.x; // always ~70px (COL_SLOT)
+        const colFrac = span > 0 ? Math.max(0, Math.min(1, (relX - pt.x) / span)) : 0;
         displayVal = pt.v + (nextPt.v - pt.v) * colFrac;
-        // Show interpolated time with minutes
-        const fracMins = Math.round(colFrac * 60);
-        // Parse the hour from pt.time (e.g. "5pm", "10am")
-        const hmatch = pt.time.match(/^(\d+)(am|pm)$/i);
-        if (hmatch) {
-          let h = parseInt(hmatch[1]);
-          const ap = hmatch[2].toLowerCase();
-          if (ap === 'pm' && h !== 12) h += 12;
-          if (ap === 'am' && h === 12) h = 0;
-          const totalMins = h * 60 + fracMins;
-          const dh = Math.floor(totalMins / 60) % 24;
-          const dm = totalMins % 60;
-          const dap = dh >= 12 ? 'pm' : 'am';
-          const dh12 = dh % 12 || 12;
-          timeLabel = `${dh12}:${String(dm).padStart(2,'0')}${dap}`;
-        }
+        // Exact interpolated time from unix timestamps
+        const interpMs = pt.unixMs + (nextPt.unixMs - pt.unixMs) * colFrac;
+        const d = new Date(interpMs);
+        const h = d.getHours(), m = d.getMinutes();
+        const ap = h >= 12 ? 'pm' : 'am';
+        const h12 = h % 12 || 12;
+        timeLabel = `${h12}:${String(m).padStart(2,'0')}${ap}`;
       }
 
       ttTime.textContent = timeLabel + (pt.dateStr ? '  ·  ' + pt.dateStr : '');
