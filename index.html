@@ -303,6 +303,7 @@ body {
 .search-wrap {
   position: relative; width: 100%; max-width: 500px;
   animation: fadeUp 0.9s 0.18s cubic-bezier(0.16,1,0.3,1) both;
+  z-index: 9000;
 }
 
 .search-input {
@@ -345,7 +346,7 @@ body {
   position: absolute; top: calc(100% + 10px); left: 0; right: 0;
   background: rgba(8,14,28,0.98);
   border: 1px solid rgba(255,255,255,0.13);
-  border-radius: 22px; overflow: hidden; z-index: 100;
+  border-radius: 22px; overflow: hidden; z-index: 9000;
   box-shadow: 0 28px 72px rgba(0,0,0,0.75), 0 2px 0 rgba(255,255,255,0.04) inset;
   display: none;
   backdrop-filter: blur(24px);
@@ -478,7 +479,7 @@ body {
 }
 .back-btn:hover { color: var(--text); background: rgba(255,255,255,0.11); border-color: rgba(255,255,255,0.2); }
 .back-btn:active { transform: scale(0.97); }
-.nav-search-wrap { position: relative; flex: 1; min-width: 0; }
+.nav-search-wrap { position: relative; flex: 1; min-width: 0; z-index: 9000; }
 .nav-search {
   width: 100%; background: rgba(255,255,255,0.055); border: 1px solid rgba(255,255,255,0.09);
   border-radius: 100px; padding: 10px 22px;
@@ -1086,7 +1087,7 @@ async function lookupCity(displayName, lat, lon) {
       fetch(hourlyUrl, { headers: { 'User-Agent': 'NWSPoint Weather App' } }),
       fetch(gridUrl,   { headers: { 'User-Agent': 'NWSPoint Weather App' } }),
       fetch(`https://currentuvindex.com/api/v1/uvi?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}`).catch(() => null),
-      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}&hourly=surface_pressure,visibility,windgusts_10m,boundary_layer_height,cape&wind_speed_unit=mph&timeformat=unixtime&forecast_days=7`).catch(() => null),
+      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}&hourly=surface_pressure,visibility,windgusts_10m,boundary_layer_height,cape,uv_index&wind_speed_unit=mph&timeformat=unixtime&forecast_days=7`).catch(() => null),
     ]);
     if (!hourlyRes.ok) throw new Error(`NWS hourly API error ${hourlyRes.status}`);
     const hourlyData = await hourlyRes.json();
@@ -1424,15 +1425,17 @@ function applySkyPhase(hour, weatherSf) {
   // ── Moon arc ──────────────────────────────────────────────────────────────
   const moon = document.getElementById('moon');
   const moonOpacity = { night:0.92, dawn:0.28, morning:0, day:0, sunset:0, dusk:0.50 };
-  const moonVisible = hour >= 19 || hour < 7;
+  const now = new Date();
+  const hourFrac = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+  const moonVisible = hourFrac >= 19 || hourFrac < 7;
   if (moon) {
-    const size = 90; // canvas logical size
-    moon.width  = size * 2; moon.height = size * 2; // 2x retina
+    const size = 160; // larger canvas so halo fades before edge
+    moon.width  = size * 2; moon.height = size * 2;
     moon.style.width  = size + 'px';
     moon.style.height = size + 'px';
 
     if (moonVisible) {
-      const mh = hour < 7 ? hour + 24 : hour;
+      const mh = hourFrac < 7 ? hourFrac + 24 : hourFrac;
       const mt = (mh - 19) / 12;
       const mx = 4 + mt * 92;
       const my = 6 + Math.sin(mt * Math.PI) * 65;
@@ -1442,15 +1445,16 @@ function applySkyPhase(hour, weatherSf) {
       const ctx = moon.getContext('2d');
       ctx.clearRect(0, 0, moon.width, moon.height);
       const cx = moon.width / 2, cy = moon.height / 2;
-      const R = size * 0.82; // moon radius in canvas px
+      const R = 75; // moon radius in canvas px (fixed, not tied to size)
 
-      // Outer halo
-      const halo = ctx.createRadialGradient(cx, cy, R * 0.6, cx, cy, R * 2.2);
+      // Outer halo — now has plenty of room to fade before canvas edge
+      const halo = ctx.createRadialGradient(cx, cy, R * 0.6, cx, cy, R * 3.0);
       halo.addColorStop(0,   'rgba(255,240,170,0.18)');
       halo.addColorStop(0.4, 'rgba(220,200,120,0.07)');
+      halo.addColorStop(0.8, 'rgba(200,170,80,0.02)');
       halo.addColorStop(1,   'rgba(200,170,80,0)');
       ctx.fillStyle = halo;
-      ctx.beginPath(); ctx.arc(cx, cy, R * 2.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, R * 3.0, 0, Math.PI * 2); ctx.fill();
 
       // Moon disc base — warm ivory
       const disc = ctx.createRadialGradient(cx - R*0.15, cy - R*0.2, 0, cx, cy, R);
@@ -1709,7 +1713,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
   const firstPeriod = slice[0];
 
   // Build open-meteo lookup maps: unixtime → value
-  const meteoPres = {}, meteoVis = {}, meteoGusts = {}, meteoCeil = {}, meteoCape = {};
+  const meteoPres = {}, meteoVis = {}, meteoGusts = {}, meteoCeil = {}, meteoCape = {}, meteoUV = {};
   if (meteoData?.hourly) {
     const times = meteoData.hourly.time || [];
     (meteoData.hourly.surface_pressure      || []).forEach((v, i) => { if (v != null) meteoPres[times[i]]  = v; });
@@ -1717,6 +1721,7 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
     (meteoData.hourly.windgusts_10m         || []).forEach((v, i) => { if (v != null) meteoGusts[times[i]] = v; });
     (meteoData.hourly.boundary_layer_height || []).forEach((v, i) => { if (v != null) meteoCeil[times[i]]  = v; });
     (meteoData.hourly.cape                  || []).forEach((v, i) => { if (v != null) meteoCape[times[i]]  = v; });
+    (meteoData.hourly.uv_index              || []).forEach((v, i) => { if (v != null) meteoUV[times[i]]    = v; });
   }
 
   // Parse grid extras
@@ -1951,7 +1956,8 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
     (uvData.forecast || []).forEach(f => { uvMap[f.time.slice(0,13)] = f.uvi; });
   }
   const firstHourKey = new Date(firstPeriod.startTime).toISOString().slice(0,13);
-  const uvVal = uvMap[firstHourKey] ?? uvData?.now?.uvi ?? null;
+  const firstUnixHour = Math.floor(new Date(firstPeriod.startTime).getTime() / 3600000) * 3600;
+  const uvVal = uvMap[firstHourKey] ?? uvData?.now?.uvi ?? meteoUV[firstUnixHour] ?? null;
   function uvLabel(u) {
     if (u === null || !firstPeriod.isDaytime || u === 0) return null;
     if (u <= 2)  return { text: `UV ${u} · Low`,       cls: 'uv-low' };
@@ -2562,7 +2568,7 @@ function triggerRefresh() {
         fetch(props.forecastHourly, { headers: { 'User-Agent': 'NWSPoint Weather App' } }),
         fetch(props.forecastGridData, { headers: { 'User-Agent': 'NWSPoint Weather App' } }).catch(() => null),
         fetch(`https://currentuvindex.com/api/v1/uvi?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}`).catch(() => null),
-        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}&hourly=surface_pressure,visibility,windgusts_10m,boundary_layer_height,cape&wind_speed_unit=mph&timeformat=unixtime&forecast_days=7`).catch(() => null),
+        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}&hourly=surface_pressure,visibility,windgusts_10m,boundary_layer_height,cape,uv_index&wind_speed_unit=mph&timeformat=unixtime&forecast_days=7`).catch(() => null),
         Promise.resolve(props),
       ]);
     })
