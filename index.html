@@ -2066,8 +2066,8 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
           <div class="wx-hl">H: ${todayHigh}° · L: ${todayLow}°</div>
         </div>
       </div>
-      ${chipsHtml}
     </div>
+    ${chipsHtml ? `<div style="padding: 6px 16px 10px; margin-top: 2px;">${chipsHtml.replace(/^<div class="conditions-row">/, '<div class="conditions-row" style="padding:0;">').replace(/<\/div>$/, '</div>')}</div>` : ''}
 
     <!-- Hourly timeline -->
     <div class="section-card">
@@ -2579,8 +2579,33 @@ function wireChartHover() {
 
     if (tooltip && ttTime && ttVal) {
       const color = meta?.isTemp ? '#e8a84a' : (meta?.color || '#e8a84a');
-      ttTime.textContent = pt.time + (pt.dateStr ? '  ·  ' + pt.dateStr : '');
-      ttVal.textContent  = fmtVal(type, pt.v);
+
+      // If hovering within the first column, interpolate toward next point based on x position
+      let displayVal = pt.v;
+      let timeLabel = pt.time;
+      if (best === 0 && pts.length > 1) {
+        // relX within first column: 0 = start, COL_SLOT = end
+        const COL_SLOT = 70;
+        const firstX = pts[0].x; // already offset by minuteOffsetPx
+        const secondX = pts[1].x;
+        const colFrac = Math.max(0, Math.min(1, (relX - firstX) / (secondX - firstX)));
+        if (pts[1].v !== null && !isNaN(pts[1].v)) {
+          displayVal = pt.v + (pts[1].v - pt.v) * colFrac;
+        }
+        // Show exact time with minutes for NOW column
+        const now = new Date();
+        const hoverMins = Math.round((now.getMinutes() + now.getSeconds()/60) + colFrac * 60);
+        const baseHour = now.getHours();
+        const totalMins = now.getMinutes() + Math.round(colFrac * 60);
+        const dispHour = (baseHour + Math.floor(totalMins / 60)) % 24;
+        const dispMin  = totalMins % 60;
+        const ampm = dispHour >= 12 ? 'pm' : 'am';
+        const h12  = dispHour % 12 || 12;
+        timeLabel = `${h12}:${String(dispMin).padStart(2,'0')}${ampm}`;
+      }
+
+      ttTime.textContent = timeLabel + (pt.dateStr ? '  ·  ' + pt.dateStr : '');
+      ttVal.textContent  = fmtVal(type, displayVal);
       ttVal.style.color  = color;
 
       // Tooltip X follows mouse (not snapped point) for smoothness
