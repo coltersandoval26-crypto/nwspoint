@@ -1638,13 +1638,17 @@ function parseWind(ws) {
 // Convert ISO period to short label
 function hourLabel(iso) {
   const d = new Date(iso);
-  const h = d.getHours();
-  if (h === 0) return '12am';
-  if (h < 12) return h + 'am';
-  if (h === 12) return '12pm';
-  return (h-12) + 'pm';
-}
 
+  let hours = d.getHours();
+  const minutes = d.getMinutes().toString().padStart(2, '0');
+
+  const ampm = hours >= 12 ? 'pm' : 'am';
+
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+
+  return hours + ':' + minutes + ampm;
+}
 function dayLabel(iso) {
   const d = new Date(iso);
   return d.toLocaleDateString('en-US', { weekday:'short', month:'numeric', day:'numeric' });
