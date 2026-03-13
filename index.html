@@ -3662,143 +3662,185 @@ function _mobDrawHourlyChart(type) {
   const container = document.getElementById('mob-hourly-chart');
   if (!container || !window._hourlyRows?.length) return;
 
-  const rows = window._hourlyRows.slice(0, 24); // 24h fits nicely
+  // Use 48h of data, same as desktop
+  const rows = window._hourlyRows.slice(0, 48);
   const n = rows.length;
   const meta = ROW_META[type] || { color: '#7ab8e8', isTemp: false };
   const color = meta.isTemp ? '#e8a84a' : (meta.color || '#7ab8e8');
+  const isTemp = meta.isTemp;
   const vals = getVals(type, rows);
   const valid = vals.filter(v => v !== null && !isNaN(v));
   if (!valid.length) return;
 
   const rawMin = Math.min(...valid), rawMax = Math.max(...valid);
-  const isPct = ['pop','rh','sky','lightning'].includes(type);
+
+  // ── Scale: use EXACT same logic as desktop redrawCurve ───────────────────
+  function niceMax(v, step) { return Math.ceil(v / step) * step; }
+  function niceMin(v, step) { return Math.floor(v / step) * step; }
+  const isPct      = ['pop','rh','sky','lightning'].includes(type);
   const isTempType = ['temp','fl','dew'].includes(type);
-  const isWind = ['wind','gust'].includes(type);
-
+  const isWind     = ['wind','gust'].includes(type);
   let vMin, vMax;
-  if (isPct) { vMin = 0; vMax = 100; }
-  else if (isTempType) { const pad = Math.max((rawMax-rawMin)*0.15,4); vMin = rawMin-pad; vMax = rawMax+pad; }
-  else if (isWind) { vMin = 0; vMax = Math.max(20, Math.ceil(Math.max(...rows.map(r=>Math.max(r.ws||0,r.wg||0)))/5)*5); }
-  else if (type==='uv') { vMin = 0; vMax = Math.max(11, Math.ceil(rawMax)); }
-  else if (type==='vis') { vMin = 0; vMax = Math.max(10, Math.ceil(rawMax/5)*5); }
-  else if (type==='pres') { const sp=Math.max((rawMax-rawMin)*0.15,0.05); vMin=Math.floor((rawMin-sp)*10)/10; vMax=Math.ceil((rawMax+sp)*10)/10; }
-  else if (type==='ceil') { vMin=0; vMax=Math.max(10000,Math.ceil(rawMax/5000)*5000); }
-  else { const pad=Math.max((rawMax-rawMin)*0.1,1); vMin=rawMin-pad; vMax=rawMax+pad; }
+  if (isPct) {
+    vMin = 0; vMax = 100;
+  } else if (isTempType && window._tempAxisMin != null) {
+    vMin = niceMin(window._tempAxisMin, 5);
+    vMax = niceMax(window._tempAxisMax, 5);
+  } else if (isWind) {
+    const allWind = rows.map(r => r.ws ?? 0);
+    const allGust = rows.map(r => r.wg ?? 0);
+    const combined = [...allWind, ...allGust].filter(v => !isNaN(v));
+    vMin = 0; vMax = Math.max(niceMax(Math.max(...combined), 5), 20);
+  } else if (type === 'vis')  { vMin = 0; vMax = niceMax(Math.max(rawMax, 10), 5); }
+  else if (type === 'pres') { const sp = Math.max((rawMax-rawMin)*0.15,0.05); vMin = Math.floor((rawMin-sp)*10)/10; vMax = Math.ceil((rawMax+sp)*10)/10; }
+  else if (type === 'ceil') { vMin = 0; vMax = Math.max(niceMax(rawMax, 5000), 10000); }
+  else if (type === 'uv')   { vMin = 0; vMax = Math.max(niceMax(rawMax, 1), 11); }
+  else { const pad = Math.max((rawMax-rawMin)*0.10, 1); vMin = rawMin-pad; vMax = rawMax+pad; }
 
-  const CHART_H = 150, PAD_T = 16, PAD_B = 22, INNER = CHART_H - PAD_T - PAD_B;
-  const Y_W = 36;
-  // Full width: screen width minus yaxis and page padding (16px each side)
-  const chartW = Math.max(200, (window.innerWidth || 390) - Y_W - 32);
+  // ── Dimensions ────────────────────────────────────────────────────────────
+  const CHART_H = 155, PAD_T = 18, PAD_B = 8, INNER = CHART_H - PAD_T - PAD_B;
+  const Y_W = 38, ICON_H = 22, TIME_H = 14;
+  const pageW = window.innerWidth || 390;
+  const chartW = Math.max(200, pageW - Y_W - 32);
+
+  // ── Sub-minute alignment (same as desktop) ────────────────────────────────
+  const nowMinFrac = new Date().getMinutes() / 60;
   const COL = chartW / n;
-  const range = vMax - vMin || 1;
-  const toY = v => PAD_T + INNER - ((v - vMin) / range) * INNER;
-  const toX = i => i * COL + COL / 2;
+  // Shift the entire curve left by the current minute fraction
+  // so the now-line sits at the exact current time position
+  const minShift = nowMinFrac * COL;
+  const toX = i => i * COL + COL / 2 - minShift;
+  const toY = v => PAD_T + INNER - ((v - vMin) / (vMax - vMin || 1)) * INNER;
+  const nowX = Math.max(0, toX(0) + minShift - minShift); // = toX(0) + 0 = COL/2 - minShift... 
+  // Actually: nowX = the position of "right now" = between pt[0] and pt[1] based on minutes
+  // pt[0] represents the current hour start, pt[1] is next hour start
+  // "now" is minShift pixels into pt[0]'s column
+  // After the shift, pt[0].x = COL/2 - minShift, and the left edge of the visible chart = 0
+  // So nowX = pt[0].x + minShift = COL/2
+  const nowLineX = COL / 2; // always at center of first visible column = current time
 
   const pts = rows.map((r, i) => ({
-    x: toX(i), y: toY(vals[i] ?? vMin), v: vals[i], t: r.t, r,
-    timeStr: r.timeStr
+    x: toX(i), y: toY(vals[i] ?? vMin), v: vals[i], t: r.t, r, timeStr: r.timeStr
   }));
 
-  // Bezier path
+  // ── Bezier path ───────────────────────────────────────────────────────────
   let pathD = '';
   pts.forEach((pt, i) => {
     if (i === 0) pathD += `M ${pt.x} ${pt.y}`;
-    else { const p = pts[i-1], cpx=(p.x+pt.x)/2; pathD += ` C ${cpx} ${p.y} ${cpx} ${pt.y} ${pt.x} ${pt.y}`; }
+    else { const p = pts[i-1], cpx = (p.x+pt.x)/2; pathD += ` C ${cpx} ${p.y} ${cpx} ${pt.y} ${pt.x} ${pt.y}`; }
   });
   const areaD = pathD + ` L ${pts[n-1].x} ${CHART_H} L ${pts[0].x} ${CHART_H} Z`;
 
-  // Y-axis labels
-  const rough = range / 4 || 1;
-  const mag = Math.pow(10, Math.floor(Math.log10(rough)));
-  const norm = rough / mag;
-  const step = norm < 1.5 ? mag : norm < 3.5 ? 2*mag : norm < 7.5 ? 5*mag : 10*mag;
-  let yLbls = '';
-  for (let v = Math.ceil(vMin/step)*step; v <= vMax+0.001; v += step) {
-    const y = toY(v);
-    if (y >= PAD_T-2 && y <= CHART_H-PAD_B+2) {
-      const lbl = type==='pres' ? v.toFixed(2) : type==='vis' ? v.toFixed(1) : Math.round(v);
-      yLbls += `<div style="position:absolute;right:3px;top:${y}px;transform:translateY(-50%);font-family:'Space Mono',monospace;font-size:7px;color:rgba(255,255,255,0.3);white-space:nowrap;">${lbl}</div>`;
-    }
+  // ── Stroke: color gradient for temp, solid for others (like desktop) ──────
+  const strokeAttr = isTempType ? 'url(#mobTempGrad)' : color;
+  const areaFill   = isTempType ? 'url(#mobAreaGrad)' : color + '1a';
+
+  // ── Grid lines (horizontal, matching desktop) ─────────────────────────────
+  function niceStep(r) {
+    const rough = r / 4, mag = Math.pow(10, Math.floor(Math.log10(rough || 1))), n2 = rough / mag;
+    return n2 <= 1 ? mag : n2 <= 2 ? 2*mag : n2 <= 5 ? 5*mag : 10*mag;
+  }
+  const gridStep = niceStep(vMax - vMin);
+  const gridStart = Math.ceil(vMin / gridStep) * gridStep;
+  let hGridLines = '', yAxisItems = [];
+  for (let v = gridStart; v <= vMax + gridStep * 0.01; v += gridStep) {
+    if (v < vMin) continue;
+    const y = toY(v); const lbl = fmtVal(type, v);
+    if (v > vMin) hGridLines += `<line x1="${pts[0].x}" y1="${y}" x2="${pts[n-1].x + COL/2}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-width="1" stroke-dasharray="2,6"/>`;
+    yAxisItems.push({ y, lbl });
   }
 
-  // Vertical tick marks every 3 hours
-  let vTicks = '';
+  // ── Value labels every 4th point (desktop style) ─────────────────────────
+  const lblCol = isTempType ? 'rgba(240,220,170,0.85)' : (color + 'cc');
+  let valLabels = '';
   pts.forEach((pt, i) => {
-    if (i % 3 === 0 && i > 0) {
-      vTicks += `<line x1="${pt.x}" y1="${PAD_T}" x2="${pt.x}" y2="${CHART_H-PAD_B}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
-    }
-  });
-
-  // Value labels every 4th point (or every 3rd for short series)
-  const lblStride = n > 16 ? 4 : 3;
-  let valLbls = '';
-  pts.forEach((pt, i) => {
-    if (i % lblStride !== 0) return;
+    if (i % 4 !== 0) return;
     if (pt.v === null || isNaN(pt.v)) return;
     const lbl = fmtVal(type, pt.v);
-    const yOff = pt.y < PAD_T + 14 ? pt.y + 14 : pt.y - 5;
-    valLbls += `<text x="${pt.x}" y="${yOff}" text-anchor="middle" font-size="9" font-weight="600"
-      fill="${meta.isTemp ? tempColorJs(pt.t) : color}" font-family="Space Mono,monospace"
-      stroke="rgba(10,12,22,0.9)" stroke-width="3" paint-order="stroke">${lbl}</text>`;
+    const yOff = pt.y < PAD_T + 15 ? pt.y + 15 : pt.y - 6;
+    const fillCol = isTempType ? tempColorJs(pt.t) : lblCol;
+    valLabels += `<text x="${pt.x}" y="${yOff}" text-anchor="middle" font-size="10" font-weight="700"
+      fill="${fillCol}" font-family="Space Mono,monospace"
+      stroke="rgba(4,10,22,0.92)" stroke-width="3.5" paint-order="stroke">${lbl}</text>`;
   });
 
-  // Icons row — HTML divs above chart (reliable emoji rendering)
-  const ICON_H = 24;
+  // ── Vertical ticks every 3h ───────────────────────────────────────────────
+  let vTicks = '';
+  pts.forEach((pt, i) => {
+    if (i === 0 || i % 3 !== 0) return;
+    vTicks += `<line x1="${pt.x}" y1="${PAD_T}" x2="${pt.x}" y2="${CHART_H-PAD_B}" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>`;
+  });
+
+  // ── Y-axis HTML labels ────────────────────────────────────────────────────
+  let yLbls = '';
+  yAxisItems.forEach(l => {
+    yLbls += `<div style="position:absolute;right:3px;top:${l.y}px;transform:translateY(-50%);font-family:'Space Mono',monospace;font-size:8px;color:rgba(190,180,160,0.5);white-space:nowrap;text-align:right;">${l.lbl}</div>`;
+  });
+
+  // ── Icons HTML row (every hour) ───────────────────────────────────────────
   let iconDivs = '';
   rows.forEach((r, i) => {
     const ico = weatherIcon(r.sky, r.isNight, r.shortForecast || '');
-    iconDivs += `<div style="position:absolute;left:${toX(i)}px;top:0;transform:translateX(-50%);font-size:13px;line-height:1;">${ico}</div>`;
+    iconDivs += `<div style="position:absolute;left:${toX(i)}px;top:0;transform:translateX(-50%);font-size:12px;line-height:1;">${ico}</div>`;
   });
-  const iconRow = `<div style="position:relative;width:${chartW}px;height:${ICON_H}px;">${iconDivs}</div>`;
 
-  // Time labels every 3h — HTML divs below chart
+  // ── Time labels every 3h HTML row ────────────────────────────────────────
   let timeDivs = '';
   pts.forEach((pt, i) => {
     if (i % 3 !== 0) return;
-    const lbl = i === 0
-      ? new Date().toLocaleTimeString('en-US',{hour:'numeric'}).toLowerCase().replace(' ','')
-      : rows[i].timeStr;
-    const col = i === 0 ? 'rgba(100,200,255,0.85)' : 'rgba(255,255,255,0.3)';
+    const isNow = i === 0;
+    const lbl = isNow ? new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase().replace(' ','') : rows[i].timeStr;
+    const col = isNow ? 'rgba(100,200,255,0.9)' : 'rgba(255,255,255,0.3)';
     timeDivs += `<div style="position:absolute;left:${pt.x}px;top:0;transform:translateX(-50%);font-family:'Space Mono',monospace;font-size:7px;color:${col};white-space:nowrap;">${lbl}</div>`;
   });
-  const timeRow = `<div style="position:relative;width:${chartW}px;height:14px;margin-top:2px;">${timeDivs}</div>`;
 
-  // Now-line: first column center minus minute fraction of one column width
-  const nowFrac = new Date().getMinutes() / 60;
-  const nowX = Math.max(1, toX(0) - nowFrac * COL);
-
-  const gid = 'mhcg_' + type;
+  // ── SVG ───────────────────────────────────────────────────────────────────
+  const svgW = pts[n-1].x + COL / 2; // clip to last point's right edge
   const svgContent = `
-    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
-      <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
-    </linearGradient></defs>
-    ${vTicks}
-    <path d="${areaD}" fill="url(#${gid})"/>
-    <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    ${valLbls}
-    <line x1="${nowX}" y1="${PAD_T}" x2="${nowX}" y2="${CHART_H-PAD_B}" stroke="rgba(100,200,255,0.5)" stroke-width="1.5"/>
-    <circle id="mob-h-dot" cx="-100" cy="-100" r="4.5" fill="${color}" stroke="rgba(10,12,22,0.9)" stroke-width="1.5" opacity="0"/>
+    <defs>
+      <linearGradient id="mobTempGrad" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%"   stop-color="#98c8f0"/>
+        <stop offset="35%"  stop-color="#d4c888"/>
+        <stop offset="65%"  stop-color="#e8a84a"/>
+        <stop offset="100%" stop-color="#e07040"/>
+      </linearGradient>
+      <linearGradient id="mobAreaGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stop-color="#e8a84a" stop-opacity="0.28"/>
+        <stop offset="100%" stop-color="#e8a84a" stop-opacity="0.03"/>
+      </linearGradient>
+      <linearGradient id="mobCG_${type}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stop-color="${color}" stop-opacity="0.28"/>
+        <stop offset="100%" stop-color="${color}" stop-opacity="0.03"/>
+      </linearGradient>
+      <clipPath id="mobClip"><rect x="0" y="0" width="${chartW}" height="${CHART_H}"/></clipPath>
+    </defs>
+    <g clip-path="url(#mobClip)">
+      ${hGridLines}
+      ${vTicks}
+      <path d="${areaD}" fill="${areaFill}"/>
+      <path d="${pathD}" fill="none" stroke="${strokeAttr}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${valLabels}
+      <line x1="${nowLineX}" y1="${PAD_T}" x2="${nowLineX}" y2="${CHART_H-PAD_B}" stroke="rgba(100,200,255,0.55)" stroke-width="1.5"/>
+    </g>
+    <circle id="mob-h-dot" cx="-100" cy="-100" r="5" fill="${color}" stroke="rgba(4,10,22,0.9)" stroke-width="1.5" opacity="0"/>
     <line id="mob-h-vline" x1="-100" y1="${PAD_T}" x2="-100" y2="${CHART_H-PAD_B}" stroke="${color}" stroke-width="1" stroke-dasharray="3,3" opacity="0"/>
-    <text id="mob-h-tip" x="0" y="${PAD_T-3}" font-family="Space Mono" font-size="9" fill="${color}" opacity="0" text-anchor="middle" stroke="rgba(10,12,22,0.85)" stroke-width="3" paint-order="stroke"></text>`;
-
-  const chartSvg = `<svg id="mob-h-svg" width="${chartW}" height="${CHART_H}" style="display:block;overflow:visible;cursor:crosshair;">${svgContent}</svg>`;
+    <text id="mob-h-tip" x="0" y="${PAD_T-4}" font-family="Space Mono" font-size="9" fill="${color}" opacity="0" text-anchor="middle" stroke="rgba(4,10,22,0.9)" stroke-width="3" paint-order="stroke"></text>`;
 
   container.innerHTML = `
     <div style="display:flex;align-items:flex-start;padding:0 16px;">
       <div style="width:${Y_W}px;flex-shrink:0;">
         <div style="height:${ICON_H}px;"></div>
         <div style="position:relative;height:${CHART_H}px;">${yLbls}</div>
-        <div style="height:16px;"></div>
+        <div style="height:${TIME_H}px;"></div>
       </div>
-      <div style="flex:1;min-width:0;">
-        ${iconRow}
-        ${chartSvg}
-        ${timeRow}
+      <div style="flex:1;min-width:0;overflow:hidden;">
+        <div style="position:relative;height:${ICON_H}px;">${iconDivs}</div>
+        <svg id="mob-h-svg" width="${chartW}" height="${CHART_H}" style="display:block;cursor:crosshair;overflow:hidden;">${svgContent}</svg>
+        <div style="position:relative;height:${TIME_H}px;margin-top:3px;">${timeDivs}</div>
       </div>
     </div>`;
 
-  // Wire tooltip
+  // ── Tooltip (interpolated like desktop) ───────────────────────────────────
   requestAnimationFrame(() => {
     const svg = document.getElementById('mob-h-svg');
     if (!svg) return;
@@ -3806,24 +3848,39 @@ function _mobDrawHourlyChart(type) {
     const vln = svg.querySelector('#mob-h-vline');
     const tip = svg.querySelector('#mob-h-tip');
     if (!dot) return;
+
     function showTip(clientX) {
       const rect = svg.getBoundingClientRect();
       const rx = clientX - rect.left;
-      let best = pts[0], bd = Infinity;
-      pts.forEach(p => { const d = Math.abs(p.x - rx); if (d < bd) { bd = d; best = p; } });
-      dot.setAttribute('cx', best.x); dot.setAttribute('cy', best.y); dot.setAttribute('opacity', '1');
-      vln.setAttribute('x1', best.x); vln.setAttribute('x2', best.x); vln.setAttribute('opacity', '0.6');
-      const tx = Math.max(20, Math.min(chartW - 20, best.x));
+      // Find nearest point
+      let bi = 0, bd = Infinity;
+      pts.forEach((p, i) => { const d = Math.abs(p.x - rx); if (d < bd) { bd = d; bi = i; } });
+      const pt = pts[bi];
+      dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y); dot.setAttribute('opacity', '1');
+      vln.setAttribute('x1', pt.x); vln.setAttribute('x2', pt.x); vln.setAttribute('opacity', '0.6');
+      // Interpolate value + time between left and right points
+      let dispVal = pt.v, dispTime = pt.timeStr;
+      const leftIdx = (bi > 0 && pts[bi].x > rx) ? bi - 1 : bi;
+      const lp = pts[leftIdx], rp = pts[leftIdx + 1];
+      if (rp && lp.v !== null && rp.v !== null && !isNaN(lp.v) && !isNaN(rp.v)) {
+        const span = rp.x - lp.x;
+        const frac = span > 0 ? Math.max(0, Math.min(1, (rx - lp.x) / span)) : 0;
+        dispVal = lp.v + (rp.v - lp.v) * frac;
+        const ms = (lp.r.unixMs || 0) + ((rp.r.unixMs || 0) - (lp.r.unixMs || 0)) * frac;
+        if (ms) {
+          const d = new Date(ms), h = d.getHours(), m = d.getMinutes();
+          dispTime = `${h%12||12}:${String(m).padStart(2,'0')}${h>=12?'pm':'am'}`;
+        }
+      }
+      const tx = Math.max(22, Math.min(chartW - 22, pt.x));
       tip.setAttribute('x', tx); tip.setAttribute('opacity', '1');
-      const lbl = fmtVal(type, best.v);
-      tip.textContent = `${best.timeStr} · ${lbl}`;
+      tip.textContent = `${dispTime} · ${fmtVal(type, dispVal)}`;
     }
-    function hideTip() {
-      dot.setAttribute('opacity','0'); vln.setAttribute('opacity','0'); tip.setAttribute('opacity','0');
-    }
+    function hideTip() { dot.setAttribute('opacity','0'); vln.setAttribute('opacity','0'); tip.setAttribute('opacity','0'); }
+
     svg.addEventListener('touchstart', e => { e.stopPropagation(); showTip(e.touches[0].clientX); }, {passive:true});
     svg.addEventListener('touchmove',  e => { e.stopPropagation(); showTip(e.touches[0].clientX); }, {passive:true});
-    svg.addEventListener('touchend',   () => setTimeout(hideTip, 1800), {passive:true});
+    svg.addEventListener('touchend',   () => setTimeout(hideTip, 2000), {passive:true});
     svg.addEventListener('mousemove',  e => showTip(e.clientX));
     svg.addEventListener('mouseleave', hideTip);
   });
@@ -4064,98 +4121,131 @@ function _renderMobDayChart(animate) {
   if(!valid.length){document.getElementById('mob-day-chart-area').innerHTML='<div style="text-align:center;padding:40px;color:var(--muted);font-family:Space Mono,monospace;font-size:9px;">NO DATA FOR THIS METRIC</div>';return;}
 
   const rawMin=Math.min(...valid), rawMax=Math.max(...valid);
+
+  // ── Scale: same logic as desktop redrawCurve ──────────────────────────────
+  function niceMaxD(v,s){return Math.ceil(v/s)*s;} function niceMinD(v,s){return Math.floor(v/s)*s;}
+  function niceStepD(r){const rough=r/4||1,mag=Math.pow(10,Math.floor(Math.log10(rough))),n2=rough/mag;return n2<=1?mag:n2<=2?2*mag:n2<=5?5*mag:10*mag;}
+  const isPct=['pop','rh','sky','lightning'].includes(type);
+  const isTempType=['temp','fl','dew'].includes(type);
+  const isWind=['wind','gust'].includes(type);
   let vMin,vMax;
-  if(['pop','rh','sky','lightning'].includes(type)){vMin=0;vMax=100;}
-  else if(['temp','fl','dew'].includes(type)){const pad=Math.max((rawMax-rawMin)*0.12,4);vMin=rawMin-pad;vMax=rawMax+pad;}
-  else if(['wind','gust'].includes(type)){vMin=0;vMax=Math.max(10,Math.ceil(rawMax/5)*5);}
-  else{const pad=Math.max((rawMax-rawMin)*0.1,1);vMin=rawMin-pad;vMax=rawMax+pad;}
+  if(isPct){vMin=0;vMax=100;}
+  else if(isTempType){const pad=Math.max((rawMax-rawMin)*0.12,4);vMin=niceMinD(rawMin-pad,5);vMax=niceMaxD(rawMax+pad,5);}
+  else if(isWind){vMin=0;vMax=Math.max(niceMaxD(Math.max(...dayRows.map(r=>Math.max(r.ws||0,r.wg||0))),5),20);}
+  else if(type==='vis'){vMin=0;vMax=niceMaxD(Math.max(rawMax,10),5);}
+  else if(type==='pres'){const sp=Math.max((rawMax-rawMin)*0.15,0.05);vMin=Math.floor((rawMin-sp)*10)/10;vMax=Math.ceil((rawMax+sp)*10)/10;}
+  else if(type==='ceil'){vMin=0;vMax=Math.max(niceMaxD(rawMax,5000),10000);}
+  else if(type==='uv'){vMin=0;vMax=Math.max(niceMaxD(rawMax,1),11);}
+  else{const pad=Math.max((rawMax-rawMin)*0.10,1);vMin=rawMin-pad;vMax=rawMax+pad;}
 
-  // Chart fits full available width and FULL remaining height of modal
-  const Y_AXIS_W=38, PAD_T=22, PAD_B=18, ICON_ROW_H=28, TIME_ROW_H=16;
-  const screenW=Math.min(window.innerWidth,640);
-  const screenH=window.innerHeight;
-  const chartW=screenW-Y_AXIS_W-32; // 32 = page padding
-  const n=dayRows.length;
-  const COL=Math.max(chartW/(n||1), 20);
-
-  // Dynamically measure the modal's fixed elements to compute chart height
-  // header ~68px, nav ~46px, metric pills ~38px, swipe hint ~28px, chart area padding ~32px
-  const FIXED_H = 68 + 46 + 38 + 28 + 32;
-  const CHART_H = Math.max(220, screenH - FIXED_H - ICON_ROW_H - TIME_ROW_H);
-  const INNER = CHART_H - PAD_T - PAD_B;
-
+  // ── Dimensions ────────────────────────────────────────────────────────────
+  const Y_AXIS_W=40,PAD_T=20,PAD_B=10,ICON_ROW_H=26,TIME_ROW_H=16;
+  const screenW=Math.min(window.innerWidth,640), screenH=window.innerHeight;
+  const chartW=screenW-Y_AXIS_W-32;
+  const n=dayRows.length, COL=Math.max(chartW/(n||1),20);
+  const FIXED_H=68+46+38+28+32+28; // header+nav+pills+hint+pad+summary
+  const CHART_H=Math.max(200,screenH-FIXED_H-ICON_ROW_H-TIME_ROW_H);
+  const INNER=CHART_H-PAD_T-PAD_B;
   const range=vMax-vMin||1;
   const toY=v=>PAD_T+INNER-((v-vMin)/range)*INNER;
   const toX=i=>i*COL+COL/2;
   const pts=dayRows.map((r,i)=>({x:toX(i),y:toY(vals[i]??vMin),v:vals[i],t:r.t,unixMs:r.unixMs,timeStr:r.timeStr}));
 
+  // ── Bezier path ───────────────────────────────────────────────────────────
   let pathD='';
   pts.forEach((pt,i)=>{
     if(i===0)pathD+=`M ${pt.x} ${pt.y}`;
     else{const p=pts[i-1],cpx=(p.x+pt.x)/2;pathD+=` C ${cpx} ${p.y} ${cpx} ${pt.y} ${pt.x} ${pt.y}`;}
   });
-  const areaD=pathD+` L ${pts[pts.length-1].x} ${CHART_H} L ${pts[0].x} ${CHART_H} Z`;
+  const areaD=pathD+` L ${pts[n-1].x} ${CHART_H} L ${pts[0].x} ${CHART_H} Z`;
+  const strokeAttr=isTempType?'url(#dayTempGrad)':color;
+  const areaFill=isTempType?'url(#dayAreaGrad)':color+'1a';
 
-  // Y axis labels
-  const rough=(vMax-vMin)/4||1, mag=Math.pow(10,Math.floor(Math.log10(rough)));
-  const norm=rough/mag, step=norm<1.5?mag:norm<3.5?2*mag:norm<7.5?5*mag:10*mag;
-  let yLbls='';
-  for(let v=Math.ceil(vMin/step)*step;v<=vMax+0.001;v+=step){
-    const y=toY(v);
-    if(y>=PAD_T-2&&y<=CHART_H-PAD_B+2){
-      const lbl=type==='pres'?v.toFixed(2):type==='vis'?v.toFixed(1):Math.round(v);
-      yLbls+=`<div style="position:absolute;right:4px;transform:translateY(-50%);top:${y}px;font-family:'Space Mono',monospace;font-size:8px;color:rgba(255,255,255,0.3);white-space:nowrap;">${lbl}</div>`;
-    }
+  // ── Grid lines ────────────────────────────────────────────────────────────
+  const gridStep=niceStepD(vMax-vMin), gridStart=Math.ceil(vMin/gridStep)*gridStep;
+  let hGrid=''; const yItems=[];
+  for(let v=gridStart;v<=vMax+gridStep*0.01;v+=gridStep){
+    if(v<vMin)continue; const y=toY(v); const lbl=fmtVal(type,v);
+    if(v>vMin)hGrid+=`<line x1="0" y1="${y}" x2="${chartW}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-width="1" stroke-dasharray="2,6"/>`;
+    yItems.push({y,lbl});
   }
 
-  // Horizontal grid lines
-  let gridLines='';
-  for(let v=Math.ceil(vMin/step)*step;v<=vMax+0.001;v+=step){
-    const y=toY(v); if(y<PAD_T||y>CHART_H-PAD_B) continue;
-    gridLines+=`<line x1="0" y1="${y}" x2="${chartW}" y2="${y}" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>`;
-  }
+  // ── Vertical ticks every 3h ───────────────────────────────────────────────
+  let vTicks='';
+  pts.forEach((pt,i)=>{if(i>0&&i%3===0)vTicks+=`<line x1="${pt.x}" y1="${PAD_T}" x2="${pt.x}" y2="${CHART_H-PAD_B}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;});
 
-  // Value labels on curve every 3rd point
-  const lblColor = meta.isTemp?'rgba(240,210,150,0.85)':(meta.color+'cc');
-  let valLbls='';
+  // ── Value labels ──────────────────────────────────────────────────────────
+  const lblCol=isTempType?'rgba(240,220,170,0.85)':(color+'cc');
   const stride=Math.max(1,Math.floor(n/8));
+  let valLbls='';
   pts.forEach((pt,i)=>{
-    if(i%stride!==0) return;
-    if(pt.v===null||isNaN(pt.v)) return;
-    const lbl=fmtVal(type,pt.v);
-    const yy=pt.y<PAD_T+16?pt.y+14:pt.y-7;
-    valLbls+=`<text x="${pt.x}" y="${yy}" text-anchor="middle" font-size="10" font-weight="700"
-      fill="${lblColor}" font-family="Space Mono,monospace"
-      stroke="rgba(4,10,22,0.9)" stroke-width="3" paint-order="stroke">${lbl}</text>`;
+    if(i%stride!==0||pt.v===null||isNaN(pt.v))return;
+    const lbl=fmtVal(type,pt.v), yy=pt.y<PAD_T+16?pt.y+14:pt.y-6;
+    const fc=isTempType?tempColorJs(pt.t):lblCol;
+    valLbls+=`<text x="${pt.x}" y="${yy}" text-anchor="middle" font-size="10" font-weight="700" fill="${fc}" font-family="Space Mono,monospace" stroke="rgba(4,10,22,0.92)" stroke-width="3.5" paint-order="stroke">${lbl}</text>`;
   });
 
-  // Icons row — show icon every 3h to avoid overcrowding, time label every 3h below icon
-  // Use HTML divs absolutely positioned
-  const svgTotalW = Math.max(chartW, n * COL);
-  let iconDivs='', timeDivs='';
+  // ── Y-axis HTML ───────────────────────────────────────────────────────────
+  let yLbls='';
+  yItems.forEach(l=>{yLbls+=`<div style="position:absolute;right:3px;top:${l.y}px;transform:translateY(-50%);font-family:'Space Mono',monospace;font-size:8px;color:rgba(190,180,160,0.5);white-space:nowrap;text-align:right;">${l.lbl}</div>`;});
+
+  // ── Icons + time HTML rows ────────────────────────────────────────────────
+  let iconDivs='',timeDivs='';
   dayRows.forEach((r,i)=>{
     const cx=toX(i);
-    const showLabel=(i%3===0);
-    iconDivs+=`<div style="position:absolute;left:${cx}px;top:0;transform:translateX(-50%);font-size:${showLabel?'14px':'11px'};line-height:1;opacity:${showLabel?1:0.5};">${weatherIcon(r.sky,r.isNight,r.shortForecast||'')}</div>`;
-    if(showLabel) timeDivs+=`<div style="position:absolute;left:${cx}px;top:0;transform:translateX(-50%);font-family:'Space Mono',monospace;font-size:7px;color:rgba(255,255,255,0.35);white-space:nowrap;">${r.timeStr}</div>`;
+    iconDivs+=`<div style="position:absolute;left:${cx}px;top:0;transform:translateX(-50%);font-size:12px;line-height:1;">${weatherIcon(r.sky,r.isNight,r.shortForecast||'')}</div>`;
+    if(i%3===0)timeDivs+=`<div style="position:absolute;left:${cx}px;top:0;transform:translateX(-50%);font-family:'Space Mono',monospace;font-size:7px;color:rgba(255,255,255,0.35);white-space:nowrap;">${r.timeStr}</div>`;
   });
+
+  // ── UV / summary chips injected above chart area ──────────────────────────
+  const dayHigh=Math.max(...dayRows.map(r=>r.t||0));
+  const dayLow=Math.min(...dayRows.map(r=>r.t||99));
+  const dayMaxUV=Math.max(0,...dayRows.map(r=>r.uv??0));
+  const uvCls2=dayMaxUV<=2?'uv-low':dayMaxUV<=5?'uv-mod':dayMaxUV<=7?'uv-high':dayMaxUV<=10?'uv-vhigh':'uv-ext';
+  const uvLbl2=dayMaxUV<=2?'Low':dayMaxUV<=5?'Moderate':dayMaxUV<=7?'High':dayMaxUV<=10?'Very High':'Extreme';
+  const maxPop2=Math.max(0,...dayRows.map(r=>r.pop??0));
+  const maxWind2=Math.max(0,...dayRows.map(r=>r.ws??0));
+  document.getElementById('mob-modal-hl').textContent=`H: ${dayHigh}°  ·  L: ${dayLow}°`;
+  let summaryEl=document.getElementById('mob-day-summary');
+  if(!summaryEl){
+    summaryEl=document.createElement('div');
+    summaryEl.id='mob-day-summary';
+    summaryEl.style.cssText='display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 8px;flex-shrink:0;';
+    const pills=document.getElementById('mob-day-metric-pills');
+    if(pills)pills.parentNode.insertBefore(summaryEl,pills.nextSibling);
+  }
+  summaryEl.innerHTML=`
+    <div class="cond-chip ${uvCls2}" style="font-size:10px;">UV ${dayMaxUV} · ${uvLbl2}</div>
+    ${maxPop2>0?`<div class="cond-chip" style="font-size:10px;">💧 ${maxPop2}%</div>`:''}
+    ${maxWind2>0?`<div class="cond-chip" style="font-size:10px;">💨 ${maxWind2} mph</div>`:''}`;
 
   const svgId='mob-day-svg';
   const chartInner=`
-    <svg id="${svgId}" width="${svgTotalW}" height="${CHART_H}" style="display:block;cursor:crosshair;">
-      <defs><linearGradient id="dayG2" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${color}" stop-opacity="0.32"/>
-        <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
-      </linearGradient></defs>
-      ${gridLines}
-      <path d="${areaD}" fill="url(#dayG2)"/>
-      <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <svg id="${svgId}" width="${chartW}" height="${CHART_H}" style="display:block;cursor:crosshair;overflow:hidden;">
+      <defs>
+        <linearGradient id="dayTempGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#98c8f0"/><stop offset="35%" stop-color="#d4c888"/>
+          <stop offset="65%" stop-color="#e8a84a"/><stop offset="100%" stop-color="#e07040"/>
+        </linearGradient>
+        <linearGradient id="dayAreaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#e8a84a" stop-opacity="0.28"/>
+          <stop offset="100%" stop-color="#e8a84a" stop-opacity="0.03"/>
+        </linearGradient>
+        <linearGradient id="dayCG" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${color}" stop-opacity="0.28"/>
+          <stop offset="100%" stop-color="${color}" stop-opacity="0.03"/>
+        </linearGradient>
+      </defs>
+      ${hGrid}${vTicks}
+      <path d="${areaD}" fill="${areaFill}"/>
+      <path d="${pathD}" fill="none" stroke="${strokeAttr}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
       ${valLbls}
       <circle id="mob-day-dot" cx="-100" cy="-100" r="5" fill="${color}" stroke="rgba(4,10,22,0.9)" stroke-width="1.5" opacity="0"/>
       <line id="mob-day-vline" x1="-100" y1="${PAD_T}" x2="-100" y2="${CHART_H-PAD_B}" stroke="${color}" stroke-width="1" stroke-dasharray="3,3" opacity="0"/>
       <text id="mob-day-tooltip" x="0" y="${PAD_T-5}" font-family="Space Mono" font-size="10" fill="${color}" opacity="0" text-anchor="middle" stroke="rgba(4,10,22,0.9)" stroke-width="3" paint-order="stroke"></text>
     </svg>`;
 
+  const svgTotalW=chartW;
   const html=`
     <div style="display:flex;align-items:flex-start;padding:0 8px;">
       <div style="width:${Y_AXIS_W}px;flex-shrink:0;">
@@ -4164,9 +4254,9 @@ function _renderMobDayChart(animate) {
         <div style="height:${TIME_ROW_H}px;"></div>
       </div>
       <div style="flex:1;min-width:0;overflow:hidden;">
-        <div style="position:relative;width:${svgTotalW}px;height:${ICON_ROW_H}px;overflow:hidden;">${iconDivs}</div>
-        <div style="overflow:hidden;height:${CHART_H}px;">${chartInner}</div>
-        <div style="position:relative;width:${svgTotalW}px;height:${TIME_ROW_H}px;">${timeDivs}</div>
+        <div style="position:relative;height:${ICON_ROW_H}px;overflow:hidden;">${iconDivs}</div>
+        <div style="height:${CHART_H}px;overflow:hidden;">${chartInner}</div>
+        <div style="position:relative;height:${TIME_ROW_H}px;margin-top:2px;">${timeDivs}</div>
       </div>
     </div>
     <div class="mob-day-swipe-hint">← SWIPE TO CHANGE DAY →</div>
@@ -4208,15 +4298,25 @@ function _mobWireDayTooltip(svg, pts, w, h, padT, padB, type, color){
   function show(clientX){
     const rect=svg.getBoundingClientRect();
     const rx=clientX-rect.left;
-    // Find nearest point
-    let best=pts[0], bd=Infinity;
-    pts.forEach(p=>{const d=Math.abs(p.x-rx);if(d<bd){bd=d;best=p;}});
+    let bi=0, bd=Infinity;
+    pts.forEach((p,i)=>{const d=Math.abs(p.x-rx);if(d<bd){bd=d;bi=i;}});
+    const best=pts[bi];
     dot.setAttribute('cx',best.x); dot.setAttribute('cy',best.y); dot.setAttribute('opacity','1');
     vline.setAttribute('x1',best.x); vline.setAttribute('x2',best.x); vline.setAttribute('opacity','0.6');
-    const lbl=fmtVal(type,best.v);
+    // Interpolate between points
+    let dispVal=best.v, dispTime=best.timeStr;
+    const li=(bi>0&&best.x>rx)?bi-1:bi;
+    const lp=pts[li], rp=pts[li+1];
+    if(rp&&lp.v!=null&&rp.v!=null&&!isNaN(lp.v)&&!isNaN(rp.v)){
+      const span=rp.x-lp.x, frac=span>0?Math.max(0,Math.min(1,(rx-lp.x)/span)):0;
+      dispVal=lp.v+(rp.v-lp.v)*frac;
+      const ms=(lp.unixMs||0)+((rp.unixMs||0)-(lp.unixMs||0))*frac;
+      if(ms){const d=new Date(ms),hh=d.getHours(),mm=d.getMinutes();dispTime=`${hh%12||12}:${String(mm).padStart(2,'0')}${hh>=12?'pm':'am'}`;}
+    }
+    const lbl=fmtVal(type,dispVal);
     const tx=Math.max(18,Math.min(w-18,best.x));
     tip.setAttribute('x',tx); tip.setAttribute('y',padT-2); tip.setAttribute('opacity','1');
-    tip.textContent=best.timeStr+' · '+lbl;
+    tip.textContent=dispTime+' · '+lbl;
   }
   function hide(){
     dot.setAttribute('opacity','0'); vline.setAttribute('opacity','0'); tip.setAttribute('opacity','0');
