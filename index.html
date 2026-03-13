@@ -471,6 +471,7 @@ body {
 
 /* ── NAV BAR ── */
 .nav-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; flex-wrap: nowrap; }
+@media(max-width:640px){ .nav-bar { display: none !important; } }
 .back-btn {
   background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10);
   border-radius: 100px; padding: 10px 20px; color: var(--text2);
@@ -949,6 +950,15 @@ footer { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--mute
 .mob-day-chart-area { flex: 1; overflow-y: auto; padding: 0 16px 16px; }
 .mob-day-swipe-hint { text-align: center; font-family: 'Space Mono', monospace; font-size: 8px; letter-spacing: 1.5px; color: var(--muted); padding: 8px 0; opacity: 0.4; }
 
+.settings-opt {
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px; padding: 11px 8px; color: var(--text2);
+  font-family: 'Nunito', sans-serif; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s;
+  -webkit-tap-highlight-color: transparent; text-align: center;
+}
+.settings-opt.active { background: rgba(100,200,240,0.12); border-color: rgba(100,200,240,0.4); color: var(--cyan); }
+
 
 </style>
 </head>
@@ -1058,6 +1068,7 @@ footer { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--mute
           <span class="live-dot"></span>
           <span class="live-text" id="mob-live-text">LIVE</span>
         </div>
+        <button onclick="openSettings()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:34px;height:34px;color:var(--muted);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">⚙</button>
       </div>
 
       <!-- Alerts banner (shared) -->
@@ -1075,6 +1086,9 @@ footer { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--mute
 
     <!-- Mobile landing (dedicated) -->
     <div id="mob-landing">
+      <div style="position:absolute;top:16px;right:16px;">
+        <button onclick="openSettings()" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:36px;height:36px;color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">⚙</button>
+      </div>
       <div class="mob-logo">NWSPOINT</div>
       <div class="mob-tagline">LIVE NWS · EVERY US CITY · NO ADS</div>
       <div class="mob-search-row" style="position:relative;">
@@ -1152,6 +1166,65 @@ footer { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--mute
 
     <footer>NWSPOINT · DATA: NATIONAL WEATHER SERVICE · NOAA · api.weather.gov</footer>
   </section>
+
+<!-- Settings overlay -->
+<div id="settings-overlay" onclick="if(event.target===this)closeSettings()" style="display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);">
+  <div id="settings-panel" style="position:absolute;bottom:0;left:0;right:0;background:rgba(8,14,28,0.98);border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:24px 24px 40px;transform:translateY(100%);transition:transform 0.32s cubic-bezier(0.16,1,0.3,1);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+      <div style="font-family:'Nunito',sans-serif;font-size:18px;font-weight:800;color:var(--text);">Settings</div>
+      <button onclick="closeSettings()" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:32px;height:32px;color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+    </div>
+
+    <!-- Temperature -->
+    <div style="margin-bottom:20px;">
+      <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:10px;">TEMPERATURE</div>
+      <div style="display:flex;gap:8px;">
+        <button class="settings-opt" id="opt-temp-f" onclick="setUnitPref('temp','f')" style="flex:1;">°F Fahrenheit</button>
+        <button class="settings-opt" id="opt-temp-c" onclick="setUnitPref('temp','c')" style="flex:1;">°C Celsius</button>
+      </div>
+    </div>
+
+    <!-- Wind speed -->
+    <div style="margin-bottom:20px;">
+      <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:10px;">WIND SPEED</div>
+      <div style="display:flex;gap:8px;">
+        <button class="settings-opt" id="opt-wind-mph" onclick="setUnitPref('wind','mph')" style="flex:1;">mph</button>
+        <button class="settings-opt" id="opt-wind-kph" onclick="setUnitPref('wind','kph')" style="flex:1;">km/h</button>
+        <button class="settings-opt" id="opt-wind-kts" onclick="setUnitPref('wind','kts')" style="flex:1;">knots</button>
+      </div>
+    </div>
+
+    <!-- Precipitation -->
+    <div style="margin-bottom:20px;">
+      <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:10px;">PRECIPITATION</div>
+      <div style="display:flex;gap:8px;">
+        <button class="settings-opt" id="opt-precip-in" onclick="setUnitPref('precip','in')" style="flex:1;">inches</button>
+        <button class="settings-opt" id="opt-precip-cm" onclick="setUnitPref('precip','cm')" style="flex:1;">cm</button>
+        <button class="settings-opt" id="opt-precip-mm" onclick="setUnitPref('precip','mm')" style="flex:1;">mm</button>
+      </div>
+    </div>
+
+    <!-- Pressure -->
+    <div style="margin-bottom:20px;">
+      <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:10px;">PRESSURE</div>
+      <div style="display:flex;gap:8px;">
+        <button class="settings-opt" id="opt-pres-inhg" onclick="setUnitPref('pres','inhg')" style="flex:1;">inHg</button>
+        <button class="settings-opt" id="opt-pres-mb" onclick="setUnitPref('pres','mb')" style="flex:1;">mbar / hPa</button>
+      </div>
+    </div>
+
+    <!-- Visibility -->
+    <div style="margin-bottom:8px;">
+      <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:10px;">VISIBILITY</div>
+      <div style="display:flex;gap:8px;">
+        <button class="settings-opt" id="opt-vis-mi" onclick="setUnitPref('vis','mi')" style="flex:1;">miles</button>
+        <button class="settings-opt" id="opt-vis-km" onclick="setUnitPref('vis','km')" style="flex:1;">km</button>
+      </div>
+    </div>
+
+    <div style="font-family:'Space Mono',monospace;font-size:8px;color:var(--muted);text-align:center;margin-top:16px;opacity:0.5;">Changes apply on next refresh</div>
+  </div>
+</div>
 
 </div>
 
@@ -3279,63 +3352,64 @@ applySkyPhase(new Date().getHours(), '');
   canvas.width = canvas.height = 512;
   const ctx = canvas.getContext('2d');
 
-  // Background
-  const bg = ctx.createLinearGradient(0, 0, 0, 512);
-  bg.addColorStop(0, '#07111f');
-  bg.addColorStop(1, '#0e2240');
+  // Background — deep twilight, more purple-navy not pure blue
+  const bg = ctx.createLinearGradient(0, 0, 512, 512);
+  bg.addColorStop(0, '#12082a');
+  bg.addColorStop(0.5, '#1a1035');
+  bg.addColorStop(1, '#0d1a2e');
   ctx.fillStyle = bg;
-  ctx.beginPath();
-  ctx.roundRect(0, 0, 512, 512, 90);
-  ctx.fill();
+  ctx.beginPath(); ctx.roundRect(0, 0, 512, 512, 96); ctx.fill();
 
-  // Sun glow
-  const sunGlow = ctx.createRadialGradient(256, 200, 0, 256, 200, 160);
-  sunGlow.addColorStop(0,   'rgba(255,220,80,0.35)');
-  sunGlow.addColorStop(0.5, 'rgba(255,160,40,0.15)');
-  sunGlow.addColorStop(1,   'transparent');
-  ctx.fillStyle = sunGlow;
-  ctx.fillRect(0, 0, 512, 512);
+  // Warm horizon glow
+  const hGlow = ctx.createRadialGradient(256, 340, 0, 256, 340, 280);
+  hGlow.addColorStop(0,   'rgba(255,140,40,0.45)');
+  hGlow.addColorStop(0.4, 'rgba(220,80,20,0.2)');
+  hGlow.addColorStop(1,   'transparent');
+  ctx.fillStyle = hGlow; ctx.fillRect(0, 0, 512, 512);
 
-  // Sun
-  const sunG = ctx.createRadialGradient(256, 200, 0, 256, 200, 72);
-  sunG.addColorStop(0,   '#fffde8');
-  sunG.addColorStop(0.4, '#ffe060');
-  sunG.addColorStop(0.8, '#ffaa20');
+  // Sun — large, warm, centered slightly above middle
+  const sunG = ctx.createRadialGradient(256, 210, 0, 256, 210, 110);
+  sunG.addColorStop(0,   '#fff8e0');
+  sunG.addColorStop(0.3, '#ffe566');
+  sunG.addColorStop(0.65,'#ff9a20');
+  sunG.addColorStop(0.9, 'rgba(255,80,0,0.6)');
   sunG.addColorStop(1,   'transparent');
   ctx.fillStyle = sunG;
-  ctx.beginPath();
-  ctx.arc(256, 200, 72, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(256, 210, 110, 0, Math.PI*2); ctx.fill();
 
-  // Horizon line
-  const hz = ctx.createLinearGradient(60, 340, 452, 340);
-  hz.addColorStop(0,   'transparent');
-  hz.addColorStop(0.2, '#38c4e8');
-  hz.addColorStop(0.8, '#38c4e8');
-  hz.addColorStop(1,   'transparent');
-  ctx.strokeStyle = hz;
-  ctx.lineWidth = 12;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(60, 350); ctx.lineTo(452, 350);
-  ctx.stroke();
-
-  // Forecast bars below horizon
-  const barColors = ['#38c4e8','#5bb8e0','#7eaed4'];
-  [0,1,2].forEach((i) => {
-    const bx = ctx.createLinearGradient(80, 0, 430, 0);
-    bx.addColorStop(0,   'transparent');
-    bx.addColorStop(0.1, barColors[i]);
-    bx.addColorStop(0.9, barColors[i]);
-    bx.addColorStop(1,   'transparent');
-    ctx.strokeStyle = bx;
-    ctx.lineWidth = 8 - i * 1.5;
-    ctx.globalAlpha = 0.7 - i * 0.15;
+  // Sun rays
+  ctx.save();
+  ctx.translate(256, 210);
+  for(let i=0;i<8;i++){
+    ctx.rotate(Math.PI*2/8);
     ctx.beginPath();
-    ctx.moveTo(80, 390 + i * 28); ctx.lineTo(430, 390 + i * 28);
-    ctx.stroke();
-  });
-  ctx.globalAlpha = 1;
+    ctx.moveTo(0, 118); ctx.lineTo(-6, 160); ctx.lineTo(6, 160);
+    ctx.closePath();
+    ctx.fillStyle='rgba(255,200,60,0.18)';
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Horizon bar
+  const hz = ctx.createLinearGradient(50, 0, 462, 0);
+  hz.addColorStop(0,   'transparent');
+  hz.addColorStop(0.15,'rgba(255,150,50,0.7)');
+  hz.addColorStop(0.85,'rgba(255,150,50,0.7)');
+  hz.addColorStop(1,   'transparent');
+  ctx.strokeStyle=hz; ctx.lineWidth=10; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(50,348); ctx.lineTo(462,348); ctx.stroke();
+
+  // Temperature curve below horizon — warm amber wiggle
+  ctx.beginPath();
+  ctx.moveTo(60, 430);
+  ctx.bezierCurveTo(130, 400, 170, 460, 256, 420);
+  ctx.bezierCurveTo(340, 380, 380, 450, 452, 410);
+  const crvG = ctx.createLinearGradient(60,0,452,0);
+  crvG.addColorStop(0,'transparent');
+  crvG.addColorStop(0.1,'rgba(255,180,60,0.8)');
+  crvG.addColorStop(0.9,'rgba(255,180,60,0.8)');
+  crvG.addColorStop(1,'transparent');
+  ctx.strokeStyle=crvG; ctx.lineWidth=9; ctx.stroke();
 
   const iconDataUrl = canvas.toDataURL('image/png');
   document.getElementById('pwa-icon').href = iconDataUrl;
@@ -3445,9 +3519,11 @@ function renderMobileForecast(periods, city, state, office, lat, lon, displayNam
     meteoUVVal = meteoUV[firstUnixHour+off] ?? meteoUV[firstUnixHour-off] ?? null;
     if (meteoUVVal !== null) break;
   }
-  const uvR = meteoUVVal !== null ? Math.round(meteoUVVal) : null;
+  // UV from already-computed hourly rows (set by desktop renderer)
+  const uvR = r0.uv !== null && r0.uv !== undefined ? Math.round(r0.uv) : null;
   const uvCls = uvR===null?'uv-low':uvR<=2?'uv-low':uvR<=5?'uv-mod':uvR<=7?'uv-high':uvR<=10?'uv-vhigh':'uv-ext';
-  const uvTxt = uvR!==null ? `UV ${uvR}` : (isDaytime ? 'UV —' : 'UV · Night');
+  const uvLabel = uvR!==null?(uvR<=2?'Low':uvR<=5?'Moderate':uvR<=7?'High':uvR<=10?'Very High':'Extreme'):'—';
+  const uvTxt = isDaytime ? `UV ${uvR??'—'} · ${uvLabel}` : `UV · Night`;
 
   const curWind = r0.ws || 0, curGusts = r0.wg || 0, curRh = r0.rh;
 
@@ -3458,16 +3534,17 @@ function renderMobileForecast(periods, city, state, office, lat, lon, displayNam
     ? `<div class="mob-alert-strip" onclick="mobGoTo(2)">⚠️ ${alertData.length} ACTIVE ALERT${alertData.length>1?'S':''} — TAP TO VIEW</div>`
     : '';
 
-  // Hourly chart embedded
+  // Hourly chart embedded - simple icon+time strip every 6 hours
   const svgW = window._svgW || 5000;
   const minuteOff = window._minuteOffsetPx || 0;
   const hourlyColsHtml = rows.slice(0,48).map((r,i) => {
-    const isNow = i===0, pop = r.pop||0;
-    return `<div class="hour-col ${r.isNight?'is-night':''} ${isNow?'is-now':''}" style="width:70px;flex-shrink:0;">
-      <div class="h-time ${isNow?'h-now':''}">${isNow?new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase().replace(' ',''):r.timeStr}</div>
-      <div class="h-icon">${weatherIcon(r.sky,r.isNight,'')}</div>
-      <div class="h-temp" style="color:${tempColorJs(r.t)}">${r.t}°</div>
-      <div class="h-bottom h-pop ${pop>=20?'h-pop-active':''}">${pop>0?pop+'%':'—'}</div>
+    const isNow = i===0;
+    // Show: now column, then every 6th hour
+    const show = isNow || (i%6===0);
+    if(!show) return `<div style="width:70px;flex-shrink:0;"></div>`;
+    return `<div style="width:70px;flex-shrink:0;text-align:center;padding:4px 2px;">
+      <div style="font-size:${isNow?'20px':'18px'};line-height:1;">${weatherIcon(r.sky,r.isNight,'')}</div>
+      <div style="font-family:'Space Mono',monospace;font-size:${isNow?'9px':'8px'};color:${isNow?'var(--cyan)':'var(--muted)'};margin-top:3px;white-space:nowrap;">${isNow?new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase().replace(' ',''):r.timeStr}</div>
     </div>`;
   }).join('');
 
@@ -3494,16 +3571,16 @@ function renderMobileForecast(periods, city, state, office, lat, lon, displayNam
       <div class="mob-stat"><div class="mob-stat-label">Visibility</div><div class="mob-stat-val">${r0.visMiles!==null&&r0.visMiles!==undefined?r0.visMiles.toFixed(1):'—'}</div><div class="mob-stat-sub">MILES</div></div>
       <div class="mob-stat"><div class="mob-stat-label">Pressure</div><div class="mob-stat-val">${r0.pressInHg||'—'}</div><div class="mob-stat-sub">INHG</div></div>
     </div>
-    <div class="mob-section-label">HOURLY FORECAST</div>
-    <div style="display:flex;margin:0 0 4px;">
-      <div id="mob-yaxis" style="width:52px;flex-shrink:0;position:relative;height:140px;"></div>
-      <div style="flex:1;overflow-x:hidden;height:140px;position:relative;" id="mob-curve-wrap">
-        <div id="mob-curve-inner" style="min-width:${svgW}px;position:relative;height:140px;">
-          <svg id="mob-curve-svg" width="${svgW}" height="140" style="display:block;"></svg>
+    <div class="mob-section-label">HOURLY</div>
+    <div style="display:flex;margin:0 0 2px;">
+      <div id="mob-yaxis" style="width:42px;flex-shrink:0;position:relative;height:120px;"></div>
+      <div style="flex:1;overflow-x:hidden;height:120px;position:relative;" id="mob-curve-wrap">
+        <div id="mob-curve-inner" style="min-width:${svgW}px;position:relative;height:120px;">
+          <svg id="mob-curve-svg" width="${svgW}" height="120" style="display:block;"></svg>
         </div>
       </div>
     </div>
-    <div style="overflow-x:auto;padding-bottom:6px;" id="mob-hourly-scroll">
+    <div style="overflow-x:auto;padding-bottom:4px;" id="mob-hourly-scroll">
       <div id="mob-timeline-table" style="display:flex;align-items:flex-start;margin-left:-${minuteOff}px;">
         ${hourlyColsHtml}
       </div>
@@ -3565,7 +3642,7 @@ function _mobRedrawCurve(type) {
   const yAxis = document.getElementById('mob-yaxis');
   if (!svgEl || !window._hourlyRows?.length) return;
 
-  const CHART_H=140, PAD_T=14, PAD_B=14, INNER=CHART_H-PAD_T-PAD_B;
+  const CHART_H=120, PAD_T=12, PAD_B=12, INNER=CHART_H-PAD_T-PAD_B;
   const rows = window._hourlyRows.slice(0,48);
   const basePts = window._svgPoints||[];
   const meta = ROW_META[type]||{color:'#7ab8e8',isTemp:false};
@@ -3605,7 +3682,7 @@ function _mobRedrawCurve(type) {
   <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
 
   if (yAxis) {
-    yAxis.style.height=CHART_H+'px'; yAxis.style.width='52px';
+    yAxis.style.height=CHART_H+'px'; yAxis.style.width='42px';
     const rough=(vMax-vMin)/4, mag=Math.pow(10,Math.floor(Math.log10(rough||1))), norm=rough/mag;
     const step=norm<1.5?mag:norm<3.5?2*mag:norm<7.5?5*mag:10*mag;
     let lbls='';
@@ -3668,8 +3745,8 @@ function mobGoTo(idx) {
 
 // ── DAY MODAL ─────────────────────────────────────────────────────────────────
 function openMobDayModal(idx) {
-  _mobDayIdx=idx; _mobDayMetric='temp';
-  document.querySelectorAll('.mob-metric-pill').forEach(p=>p.classList.toggle('active',p.textContent.trim()==='TEMP'));
+  _mobDayIdx=idx; _mobDayMetric='temp'; _mobDayAnimDir=1;
+  document.querySelectorAll('#mob-day-metric-pills .mob-metric-pill').forEach(p=>p.classList.toggle('active',p.textContent.trim()==='TEMP'));
   _renderMobDayModal();
   const m=document.getElementById('mob-day-modal');
   if(m) m.classList.add('open');
@@ -3684,15 +3761,18 @@ function closeMobDayModal() {
 
 function mobDayShift(dir) {
   const data=window._mobData; if(!data) return;
-  _mobDayIdx=Math.max(0,Math.min(data.dayList.length-1,_mobDayIdx+dir));
+  const newIdx=Math.max(0,Math.min(data.dayList.length-1,_mobDayIdx+dir));
+  if(newIdx===_mobDayIdx) return;
+  _mobDayAnimDir=dir;
+  _mobDayIdx=newIdx;
   _renderMobDayModal();
 }
 
 function mobDaySelectMetric(type, el) {
-  _mobDayMetric=type;
+  _mobDayMetric=type; _mobDayAnimDir=0;
   document.querySelectorAll('#mob-day-metric-pills .mob-metric-pill').forEach(p=>p.classList.remove('active'));
   if(el) el.classList.add('active');
-  _renderMobDayChart();
+  _renderMobDayChart(true);
 }
 
 function _renderMobDayModal() {
@@ -3708,50 +3788,68 @@ function _renderMobDayModal() {
   document.getElementById('mob-day-nav-label').textContent=date.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
   document.getElementById('mob-day-prev').disabled=_mobDayIdx===0;
   document.getElementById('mob-day-next').disabled=_mobDayIdx===dayList.length-1;
-  _renderMobDayChart();
+  _renderMobDayChart(true);
   _initDayModalSwipe();
 }
 
-function _renderMobDayChart() {
+function _renderMobDayChart(animate) {
   const data=window._mobData; if(!data) return;
-  const {dayList}=data;
-  const {periods:dp}=dayList[_mobDayIdx];
+  const {dayList,rows:allRows}=data;
+  const {date,periods:dp}=dayList[_mobDayIdx];
   const type=_mobDayMetric;
   const meta=ROW_META[type]||{color:'#7ab8e8',isTemp:false};
   const color=meta.isTemp?'#e8a84a':(meta.color||'#7ab8e8');
-  const COL=70, CHART_H=130, PAD_T=14, PAD_B=14, INNER=CHART_H-PAD_T-PAD_B;
 
-  // Build per-day rows (limited data available from NWS periods)
-  const dayRows=dp.map(p=>({
-    t:p.temperature,
-    ws:(p.windSpeed||'').match(/\d+/)?parseInt(p.windSpeed):0,
-    wg:(p.windGust||'').match(/\d+/)?parseInt(p.windGust):0,
-    pop:p.probabilityOfPrecipitation?.value??0,
-    rh:p.relativeHumidity?.value??null,
-    sky:parseCloudCover(p.shortForecast),
-    dew:p.dewpoint?Math.round(p.dewpoint.value*9/5+32):null,
-    fl:p.temperature, // fallback
-    isNight:!p.isDaytime,
-    timeStr:hourLabel(p.startTime),
-    unixMs:new Date(p.startTime).getTime(),
-    uv:0, vis:null, pressInHg:null, snow:null, ice:null, ceil:null, lightning:null,
-  }));
+  const isToday = date.toDateString()===new Date().toDateString();
+  const isFuture = date > new Date();
+
+  // For today use _hourlyRows (minute-aligned, 24h), for future days use NWS periods
+  let dayRows;
+  if(isToday && allRows?.length){
+    // Only hours remaining today
+    const endOfDay = new Date(date); endOfDay.setHours(23,59,59,999);
+    dayRows = allRows.filter(r => r.t!==undefined && new Date(r.unixMs||0) <= endOfDay).slice(0,24);
+    if(!dayRows.length) dayRows = allRows.slice(0,24);
+  } else {
+    dayRows = dp.map(p=>({
+      t:p.temperature,
+      ws:(p.windSpeed||'').match(/\d+/)?parseInt(p.windSpeed):0,
+      wg:(p.windGust||'').match(/\d+/)?parseInt(p.windGust):0,
+      pop:p.probabilityOfPrecipitation?.value??0,
+      rh:p.relativeHumidity?.value??null,
+      sky:parseCloudCover(p.shortForecast),
+      dew:p.dewpoint?Math.round(p.dewpoint.value*9/5+32):null,
+      fl:p.temperature,
+      isNight:!p.isDaytime,
+      timeStr:hourLabel(p.startTime),
+      unixMs:new Date(p.startTime).getTime(),
+      uv:0, vis:null, pressInHg:null, snow:null, ice:null, ceil:null, lightning:null,
+    }));
+  }
+  if(!dayRows.length) return;
 
   const vals=dayRows.map(r=>_mobGetVal(type,r));
   const valid=vals.filter(v=>v!==null&&!isNaN(v));
-  if(!valid.length){document.getElementById('mob-day-chart-area').innerHTML='<div style="text-align:center;padding:40px;color:var(--muted);font-family:Space Mono,monospace;font-size:9px;">NO DATA</div>';return;}
+  if(!valid.length){document.getElementById('mob-day-chart-area').innerHTML='<div style="text-align:center;padding:40px;color:var(--muted);font-family:Space Mono,monospace;font-size:9px;">NO DATA FOR THIS METRIC</div>';return;}
 
   const rawMin=Math.min(...valid), rawMax=Math.max(...valid);
   let vMin,vMax;
   if(['pop','rh','sky'].includes(type)){vMin=0;vMax=100;}
-  else if(['temp','fl','dew'].includes(type)){const pad=Math.max((rawMax-rawMin)*0.1,3);vMin=rawMin-pad;vMax=rawMax+pad;}
+  else if(['temp','fl','dew'].includes(type)){const pad=Math.max((rawMax-rawMin)*0.12,4);vMin=rawMin-pad;vMax=rawMax+pad;}
   else if(['wind','gust'].includes(type)){vMin=0;vMax=Math.max(10,Math.ceil(rawMax/5)*5);}
   else{const pad=Math.max((rawMax-rawMin)*0.1,1);vMin=rawMin-pad;vMax=rawMax+pad;}
 
+  // Chart fits full available width (screen - y-axis - padding)
+  const Y_AXIS_W=42, CHART_H=120, PAD_T=12, PAD_B=12, INNER=CHART_H-PAD_T-PAD_B;
+  const screenW=Math.min(window.innerWidth,640);
+  const chartW=screenW-Y_AXIS_W-32; // 32 = padding
+  const n=dayRows.length;
+  const COL=chartW/(n||1);
+
   const range=vMax-vMin||1;
   const toY=v=>PAD_T+INNER-((v-vMin)/range)*INNER;
-  const pts=dayRows.map((r,i)=>({x:i*COL+COL/2,y:toY(vals[i]??vMin),v:vals[i],unixMs:r.unixMs}));
-  const svgW2=dayRows.length*COL;
+  const toX=i=>i*COL+COL/2;
+  const pts=dayRows.map((r,i)=>({x:toX(i),y:toY(vals[i]??vMin),v:vals[i],t:r.t,unixMs:r.unixMs,timeStr:r.timeStr}));
 
   let pathD='';
   pts.forEach((pt,i)=>{
@@ -3760,7 +3858,7 @@ function _renderMobDayChart() {
   });
   const areaD=pathD+` L ${pts[pts.length-1].x} ${CHART_H} L ${pts[0].x} ${CHART_H} Z`;
 
-  // Y axis
+  // Y axis labels
   const rough=(vMax-vMin)/4||1, mag=Math.pow(10,Math.floor(Math.log10(rough)));
   const norm=rough/mag, step=norm<1.5?mag:norm<3.5?2*mag:norm<7.5?5*mag:10*mag;
   let yLbls='';
@@ -3768,41 +3866,100 @@ function _renderMobDayChart() {
     const y=toY(v);
     if(y>=PAD_T-2&&y<=CHART_H-PAD_B+2){
       const lbl=type==='pres'?v.toFixed(2):type==='vis'?v.toFixed(1):Math.round(v);
-      yLbls+=`<div style="position:absolute;right:6px;transform:translateY(-50%);top:${y}px;font-family:'Space Mono',monospace;font-size:8px;color:rgba(255,255,255,0.3);">${lbl}</div>`;
+      yLbls+=`<div style="position:absolute;right:4px;transform:translateY(-50%);top:${y}px;font-family:'Space Mono',monospace;font-size:8px;color:rgba(255,255,255,0.3);white-space:nowrap;">${lbl}</div>`;
     }
   }
 
-  // Hourly columns for the day
+  // Tooltip dot + label on SVG interaction
+  const svgId='mob-day-svg';
+
+  // Simplified hour strip: icon + time, every 6 hours (or every period for short days)
+  const stride=Math.max(1,Math.floor(n/6));
   const colsHtml=dayRows.map((r,i)=>{
-    const pop=r.pop||0, fmtd=_mobFmtVal(type,vals[i]);
-    return `<div class="hour-col ${r.isNight?'is-night':''}" style="width:70px;flex-shrink:0;">
-      <div class="h-time">${r.timeStr}</div>
-      <div class="h-icon">${weatherIcon(r.sky,r.isNight,'')}</div>
-      <div class="h-temp" style="color:${tempColorJs(r.t)}">${r.t}°</div>
-      <div class="h-bottom h-pop ${pop>=20?'h-pop-active':''}">${type==='temp'?(pop>0?pop+'%':'—'):fmtd}</div>
+    if(i%stride!==0&&i!==n-1) return `<div style="width:${COL}px;flex-shrink:0;"></div>`;
+    return `<div style="width:${COL}px;flex-shrink:0;text-align:center;padding:4px 0;">
+      <div style="font-size:18px;line-height:1;">${weatherIcon(r.sky,r.isNight,'')}</div>
+      <div style="font-family:'Space Mono',monospace;font-size:8px;color:var(--muted);margin-top:3px;white-space:nowrap;">${r.timeStr}</div>
     </div>`;
   }).join('');
 
-  document.getElementById('mob-day-chart-area').innerHTML=`
-    <div style="display:flex;margin-bottom:4px;">
-      <div style="width:52px;flex-shrink:0;position:relative;height:${CHART_H}px;">${yLbls}</div>
-      <div style="flex:1;overflow-x:auto;height:${CHART_H}px;">
-        <svg width="${svgW2}" height="${CHART_H}" style="display:block;">
-          <defs><linearGradient id="dayG" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="${color}" stop-opacity="0.28"/>
-            <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
-          </linearGradient></defs>
-          <path d="${areaD}" fill="url(#dayG)"/>
-          <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-        </svg>
-      </div>
+  const chartInner=`
+    <svg id="${svgId}" width="${chartW}" height="${CHART_H}" style="display:block;cursor:crosshair;overflow:visible;">
+      <defs><linearGradient id="dayG2" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
+      </linearGradient></defs>
+      <path d="${areaD}" fill="url(#dayG2)"/>
+      <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle id="mob-day-dot" cx="-100" cy="-100" r="5" fill="${color}" opacity="0"/>
+      <line id="mob-day-vline" x1="-100" y1="${PAD_T}" x2="-100" y2="${CHART_H-PAD_B}" stroke="${color}" stroke-width="1" stroke-dasharray="3,3" opacity="0"/>
+      <text id="mob-day-tooltip" x="0" y="${PAD_T-2}" font-family="Space Mono" font-size="10" fill="${color}" opacity="0" text-anchor="middle"></text>
+    </svg>`;
+
+  const html=`
+    <div style="display:flex;align-items:stretch;margin-bottom:2px;touch-action:pan-y;">
+      <div style="width:${Y_AXIS_W}px;flex-shrink:0;position:relative;height:${CHART_H}px;">${yLbls}</div>
+      <div style="flex:1;overflow:hidden;height:${CHART_H}px;">${chartInner}</div>
     </div>
-    <div style="overflow-x:auto;padding-bottom:4px;">
-      <div style="display:flex;align-items:flex-start;">${colsHtml}</div>
-    </div>
-    <div class="mob-day-swipe-hint">← SWIPE FOR OTHER DAYS →</div>
+    <div style="display:flex;margin-left:${Y_AXIS_W}px;">${colsHtml}</div>
+    <div class="mob-day-swipe-hint">← SWIPE CHART TO SWITCH DAYS →</div>
   `;
+
+  const area=document.getElementById('mob-day-chart-area');
+  if(animate){
+    area.style.opacity='0';
+    area.style.transform='translateX('+(_mobDayAnimDir>0?'18px':'-18px')+')';
+    area.style.transition='none';
+    area.innerHTML=html;
+    requestAnimationFrame(()=>{
+      area.style.transition='opacity 0.22s ease, transform 0.22s cubic-bezier(0.16,1,0.3,1)';
+      area.style.opacity='1';
+      area.style.transform='translateX(0)';
+    });
+  } else {
+    area.innerHTML=html;
+  }
+
+  // Wire interactive tooltip
+  _mobDayChartPts=pts;
+  const svgEl=document.getElementById(svgId);
+  if(svgEl) _mobWireDayTooltip(svgEl, pts, chartW, CHART_H, PAD_T, PAD_B, type, color);
+  // Wire swipe for day change
+  _initDayModalSwipe();
 }
+
+let _mobDayChartPts=[];
+let _mobDayAnimDir=1;
+
+function _mobWireDayTooltip(svg, pts, w, h, padT, padB, type, color){
+  const dot=svg.querySelector('#mob-day-dot');
+  const vline=svg.querySelector('#mob-day-vline');
+  const tip=svg.querySelector('#mob-day-tooltip');
+  if(!dot||!vline||!tip) return;
+
+  function show(clientX){
+    const rect=svg.getBoundingClientRect();
+    const rx=clientX-rect.left;
+    // Find nearest point
+    let best=pts[0], bd=Infinity;
+    pts.forEach(p=>{const d=Math.abs(p.x-rx);if(d<bd){bd=d;best=p;}});
+    dot.setAttribute('cx',best.x); dot.setAttribute('cy',best.y); dot.setAttribute('opacity','1');
+    vline.setAttribute('x1',best.x); vline.setAttribute('x2',best.x); vline.setAttribute('opacity','0.6');
+    const lbl=_mobFmtVal(type,best.v);
+    const tx=Math.max(18,Math.min(w-18,best.x));
+    tip.setAttribute('x',tx); tip.setAttribute('y',padT-2); tip.setAttribute('opacity','1');
+    tip.textContent=best.timeStr+' · '+lbl;
+  }
+  function hide(){
+    dot.setAttribute('opacity','0'); vline.setAttribute('opacity','0'); tip.setAttribute('opacity','0');
+  }
+  svg.addEventListener('touchstart',e=>{show(e.touches[0].clientX);},{passive:true});
+  svg.addEventListener('touchmove',e=>{show(e.touches[0].clientX);},{passive:true});
+  svg.addEventListener('touchend',()=>setTimeout(hide,1200),{passive:true});
+  svg.addEventListener('mousemove',e=>show(e.clientX));
+  svg.addEventListener('mouseleave',hide);
+}
+
 
 function _mobFmtVal(type,val){
   if(val===null||val===undefined||isNaN(val))return'—';
@@ -3816,16 +3973,19 @@ function _mobFmtVal(type,val){
   return Math.round(val)+'°';
 }
 
-let _dayModalSwipeSx=0;
+let _dayModalSwipeSx=0, _dayModalSwiping=false;
 function _initDayModalSwipe(){
   const area=document.getElementById('mob-day-chart-area');
-  if(!area||area._swipeInited) return;
-  area._swipeInited=true;
-  area.addEventListener('touchstart',e=>{_dayModalSwipeSx=e.touches[0].clientX;},{passive:true});
+  if(!area) return;
+  // Always re-add since innerHTML was replaced
+  area.addEventListener('touchstart',e=>{
+    _dayModalSwipeSx=e.touches[0].clientX; _dayModalSwiping=true;
+  },{passive:true,once:false});
   area.addEventListener('touchend',e=>{
+    if(!_dayModalSwiping) return; _dayModalSwiping=false;
     const dx=e.changedTouches[0].clientX-_dayModalSwipeSx;
-    if(Math.abs(dx)>50) mobDayShift(dx<0?1:-1);
-  },{passive:true});
+    if(Math.abs(dx)>52) mobDayShift(dx<0?1:-1);
+  },{passive:true,once:false});
 }
 
 // ── HOOK INTO renderForecast ─────────────────────────────────────────────────
@@ -3865,7 +4025,84 @@ if(IS_MOBILE()){
     const mt=document.getElementById('now-col-time');
     if(ml) ml.textContent=document.getElementById('live-text')?.textContent||'LIVE';
   },1000);
+// ── SETTINGS ─────────────────────────────────────────────────────────────────
+window._unitPrefs = JSON.parse(localStorage.getItem('wx_units')||'{}');
+// Defaults
+if(!_unitPrefs.temp)   _unitPrefs.temp   = 'f';
+if(!_unitPrefs.wind)   _unitPrefs.wind   = 'mph';
+if(!_unitPrefs.precip) _unitPrefs.precip = 'in';
+if(!_unitPrefs.pres)   _unitPrefs.pres   = 'inhg';
+if(!_unitPrefs.vis)    _unitPrefs.vis    = 'mi';
+
+function openSettings(){
+  const ov=document.getElementById('settings-overlay');
+  const pn=document.getElementById('settings-panel');
+  if(!ov||!pn) return;
+  ov.style.display='block';
+  requestAnimationFrame(()=>{ pn.style.transform='translateY(0)'; });
+  _syncSettingsUI();
 }
+
+function closeSettings(){
+  const ov=document.getElementById('settings-overlay');
+  const pn=document.getElementById('settings-panel');
+  if(!pn) return;
+  pn.style.transform='translateY(100%)';
+  setTimeout(()=>{ if(ov) ov.style.display='none'; }, 350);
+}
+
+function setUnitPref(cat, val){
+  _unitPrefs[cat]=val;
+  localStorage.setItem('wx_units',JSON.stringify(_unitPrefs));
+  _syncSettingsUI();
+}
+
+function _syncSettingsUI(){
+  const map={
+    'opt-temp-f':   _unitPrefs.temp==='f',
+    'opt-temp-c':   _unitPrefs.temp==='c',
+    'opt-wind-mph': _unitPrefs.wind==='mph',
+    'opt-wind-kph': _unitPrefs.wind==='kph',
+    'opt-wind-kts': _unitPrefs.wind==='kts',
+    'opt-precip-in':_unitPrefs.precip==='in',
+    'opt-precip-cm':_unitPrefs.precip==='cm',
+    'opt-precip-mm':_unitPrefs.precip==='mm',
+    'opt-pres-inhg':_unitPrefs.pres==='inhg',
+    'opt-pres-mb':  _unitPrefs.pres==='mb',
+    'opt-vis-mi':   _unitPrefs.vis==='mi',
+    'opt-vis-km':   _unitPrefs.vis==='km',
+  };
+  Object.entries(map).forEach(([id,active])=>{
+    const el=document.getElementById(id);
+    if(el) el.classList.toggle('active',active);
+  });
+}
+
+// Helpers for unit conversion (used by rendering code)
+window.convertTemp = function(f){ return _unitPrefs.temp==='c' ? Math.round((f-32)*5/9) : Math.round(f); };
+window.tempUnit    = function(){ return _unitPrefs.temp==='c' ? '°C' : '°F'; };
+window.convertWind = function(mph){ 
+  if(_unitPrefs.wind==='kph') return Math.round(mph*1.60934);
+  if(_unitPrefs.wind==='kts') return Math.round(mph*0.868976);
+  return Math.round(mph);
+};
+window.windUnit = function(){ return _unitPrefs.wind; };
+window.convertPrecip = function(inches){
+  if(_unitPrefs.precip==='cm') return (inches*2.54).toFixed(2);
+  if(_unitPrefs.precip==='mm') return (inches*25.4).toFixed(1);
+  return inches;
+};
+window.precipUnit = function(){ return _unitPrefs.precip; };
+window.convertPres = function(inhg){
+  if(_unitPrefs.pres==='mb') return (parseFloat(inhg)*33.8639).toFixed(1);
+  return inhg;
+};
+window.presUnit = function(){ return _unitPrefs.pres==='mb' ? 'mb' : 'inHg'; };
+window.convertVis = function(mi){
+  if(_unitPrefs.vis==='km') return (mi*1.60934).toFixed(1);
+  return typeof mi==='number'?mi.toFixed(1):mi;
+};
+window.visUnit = function(){ return _unitPrefs.vis==='km' ? 'km' : 'mi'; };
 
 </script>
 </body>
