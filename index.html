@@ -1976,11 +1976,14 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
 
   let dailyRows = '';
   Object.values(byDay).slice(0, 7).forEach(({ periods: dp, date }) => {
-    const high = Math.max(...dp.map(p=>p.temperature));
-    const low  = Math.min(...dp.map(p=>p.temperature));
+    const isToday = date.toDateString() === new Date().toDateString();
+    const dayKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+    const dayMaxEntries = Object.entries(gridMaxTemp).filter(([k]) => k.startsWith(dayKey));
+    const dayMinEntries = Object.entries(gridMinTemp).filter(([k]) => k.startsWith(dayKey));
+    const high = dayMaxEntries.length ? Math.round(Math.max(...dayMaxEntries.map(([,v]) => v))) : Math.max(...dp.map(p=>p.temperature));
+    const low  = dayMinEntries.length ? Math.round(Math.min(...dayMinEntries.map(([,v]) => v))) : Math.min(...dp.map(p=>p.temperature));
     const maxPop = Math.max(...dp.map(p=>p.probabilityOfPrecipitation?.value ?? 0));
     const dayName = date.toLocaleDateString('en-US', { weekday:'long' });
-    const isToday = date.toDateString() === new Date().toDateString();
     // pick daytime icon
     const dayPeriod = dp.find(p=>p.isDaytime) || dp[0];
     const icon = weatherIcon(parseCloudCover(dayPeriod.shortForecast), false, dayPeriod.shortForecast);
@@ -2802,6 +2805,8 @@ function triggerRefresh() {
     });
 }
 
+let _lastHour = new Date().getHours();
+
 function updateBadge() {
   const liveText = document.getElementById('live-text');
   if (!liveText) return;
@@ -2817,6 +2822,12 @@ function updateBadge() {
     const COL_SLOT = 70;
     const frac = (new Date().getMinutes() * 60 + new Date().getSeconds()) / 3600;
     nowLine.style.left = (COL_SLOT / 2 - frac * COL_SLOT) + 'px';
+  }
+  // If the hour has ticked over, trigger an immediate refresh so the graph advances
+  const currentHour = new Date().getHours();
+  if (currentHour !== _lastHour) {
+    _lastHour = currentHour;
+    triggerRefresh();
   }
 }
 
