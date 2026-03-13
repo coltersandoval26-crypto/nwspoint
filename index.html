@@ -4022,9 +4022,10 @@ if(IS_MOBILE()){
   // Update mob live badge from same tick
   setInterval(()=>{
     const ml=document.getElementById('mob-live-text');
-    const mt=document.getElementById('now-col-time');
     if(ml) ml.textContent=document.getElementById('live-text')?.textContent||'LIVE';
   },1000);
+}
+
 // ── SETTINGS ─────────────────────────────────────────────────────────────────
 window._unitPrefs = JSON.parse(localStorage.getItem('wx_units')||'{}');
 // Defaults
