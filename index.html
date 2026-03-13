@@ -906,6 +906,8 @@ footer { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--mute
   backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
   display: none; flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom, 0);
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 #mob-day-modal.open { display: flex; animation: fadeUp 0.25s cubic-bezier(0.16,1,0.3,1) both; }
 .mob-modal-header {
@@ -2414,17 +2416,17 @@ function renderForecast(periods, city, state, office, lat, lon, displayName, gri
     }
   });
 
-  // 7-day summary (group by calendar day, pick high/low)
-  const byDay = {};
-  slice.forEach(p => {
+  // 7-day summary — use full periods (not just current slice) to get enough days
+  const byDayFull = {};
+  periods.slice(0, 156).forEach(p => {
     const d = new Date(p.startTime);
     const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    if (!byDay[key]) byDay[key] = { periods:[], date:d };
-    byDay[key].periods.push(p);
+    if (!byDayFull[key]) byDayFull[key] = { periods:[], date:d };
+    byDayFull[key].periods.push(p);
   });
 
   let dailyRows = '';
-  Object.values(byDay).slice(0, 7).forEach(({ periods: dp, date }) => {
+  Object.values(byDayFull).slice(0, 7).forEach(({ periods: dp, date }) => {
     const isToday = date.toDateString() === new Date().toDateString();
     const dayKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
     const dayMaxEntries = Object.entries(gridMaxTemp).filter(([k]) => k.startsWith(dayKey));
@@ -2756,7 +2758,7 @@ function redrawCurve(type) {
   const yAxis = document.getElementById('chart-y-axis');
   if (!svgEl || !window._hourlyRows?.length) return;
 
-  const CHART_H = 160, PAD_T = 18, PAD_B = 28;
+  const CHART_H = 160, PAD_T = 18, PAD_B = 8;
   const INNER = CHART_H - PAD_T - PAD_B;
   const meta = ROW_META[type] || { color: '#e8a84a', isTemp: true };
   const rows = window._hourlyRows;
@@ -2883,25 +2885,13 @@ function redrawCurve(type) {
     const isNewDay = r.dateStr !== rows[i - 1].dateStr;
 
     if (i % 3 === 0) {
-      // Every 3 hours: solid visible tick
-      const opacity = isNewDay ? 0.7 : 0.38;
-      const sw      = isNewDay ? 2   : 1.5;
+      const opacity = isNewDay ? 0.55 : 0.18;
+      const sw      = isNewDay ? 1.5  : 1;
       vTicks += `<line x1="${pt.x}" y1="${PAD_T}" x2="${pt.x}" y2="${LINE_BOT}"
         stroke="rgba(255,255,255,${opacity})" stroke-width="${sw}"/>`;
-
-      // Label: every 6h shows time; day boundary shows day name
-      if (i % 6 === 0 || isNewDay) {
-        const lbl  = isNewDay ? r.dateStr.split(',')[0] : r.timeStr;
-        const fill = isNewDay ? 'rgba(220,205,170,0.85)' : 'rgba(185,175,155,0.65)';
-        const fw   = isNewDay ? 'bold' : 'normal';
-        vTicks += `<text x="${pt.x}" y="${LABEL_Y}" text-anchor="middle"
-          font-size="9" font-weight="${fw}" fill="${fill}"
-          font-family="Space Mono, monospace">${lbl}</text>`;
-      }
-    } else if (i % 1 === 0) {
-      // Every non-3h hour: subtle tick at base only
-      vTicks += `<line x1="${pt.x}" y1="${LINE_BOT - 5}" x2="${pt.x}" y2="${LINE_BOT}"
-        stroke="rgba(255,255,255,0.10)" stroke-width="1"/>`;
+    } else {
+      vTicks += `<line x1="${pt.x}" y1="${LINE_BOT - 4}" x2="${pt.x}" y2="${LINE_BOT}"
+        stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`;
     }
   });
 
@@ -3537,7 +3527,7 @@ function renderMobileForecast(periods, city, state, office, lat, lon, displayNam
 
   // Build dayList
   const byDay = {};
-  periods.slice(0, 120).forEach(p => {
+  periods.slice(0, 156).forEach(p => {
     const d = new Date(p.startTime);
     const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
     if (!byDay[key]) byDay[key] = { periods: [], date: d };
@@ -3550,9 +3540,9 @@ function renderMobileForecast(periods, city, state, office, lat, lon, displayNam
   const todayHigh = r0.t !== undefined ? Math.max(...rows.slice(0,24).map(r=>r.t)) : '—';
   const todayLow  = r0.t !== undefined ? Math.min(...rows.slice(0,24).map(r=>r.t)) : '—';
 
-  // UV chip
+  // UV chip — use local hour for daytime, never trust firstPeriod.isDaytime alone
   const localHour = new Date().getHours();
-  const isDaytime = firstPeriod.isDaytime ?? (localHour >= 7 && localHour < 20);
+  const isDaytime = localHour >= 7 && localHour < 20;
   const meteoUV = window._meteoUV || {};
   const firstUnixHour = Math.floor(new Date(firstPeriod.startTime).getTime() / 1000 / 3600) * 3600;
   let meteoUVVal = null;
@@ -3568,89 +3558,11 @@ function renderMobileForecast(periods, city, state, office, lat, lon, displayNam
 
   const curWind = r0.ws || 0, curGusts = r0.wg || 0, curRh = r0.rh;
 
-  // ── PAGE 0: CURRENT hourly chart — completely self-contained ────────────────
-  // Alerts strip
+  // ── PAGE 0: CURRENT ──────────────────────────────────────────────────────────
   const alertData = window._alertData || [];
   const alertStrip = alertData.length
     ? `<div class="mob-alert-strip" onclick="mobGoTo(2)">⚠️ ${alertData.length} ACTIVE ALERT${alertData.length>1?'S':''} — TAP TO VIEW</div>`
     : '';
-
-  // Use 60px columns, icons every hour above the graph, times every 3h
-  const MOB_COL = 60;
-  const MOB_H = 160, MOB_PAD_T = 20, MOB_PAD_B = 14, MOB_INNER = MOB_H - MOB_PAD_T - MOB_PAD_B;
-  const MOB_YAXIS = 36;
-  const hourRows = rows.slice(0, 48);
-  const nowMs = Date.now();
-  const nowMinFrac = new Date().getMinutes() / 60;
-  const mobMinOff = nowMinFrac * MOB_COL; // pixel offset for sub-hour alignment
-
-  // Scale for temp (default)
-  const hTemps = hourRows.map(r => r.t).filter(v => v != null);
-  const hMin = Math.min(...hTemps), hMax = Math.max(...hTemps);
-  const hPad = Math.max((hMax - hMin) * 0.15, 4);
-  const vMin0 = hMin - hPad, vMax0 = hMax + hPad, range0 = vMax0 - vMin0 || 1;
-  const toY0 = v => MOB_PAD_T + MOB_INNER - ((v - vMin0) / range0) * MOB_INNER;
-  const toX0 = i => i * MOB_COL + MOB_COL / 2;
-
-  // Build SVG path for temp
-  const hPts = hourRows.map((r, i) => ({ x: toX0(i), y: toY0(r.t ?? hMin), t: r.t, r }));
-  let hPath = '';
-  hPts.forEach((pt, i) => {
-    if (i === 0) hPath += `M ${pt.x} ${pt.y}`;
-    else { const p = hPts[i-1], cpx = (p.x + pt.x) / 2; hPath += ` C ${cpx} ${p.y} ${cpx} ${pt.y} ${pt.x} ${pt.y}`; }
-  });
-  const hArea = hPath + ` L ${hPts[hPts.length-1].x} ${MOB_H} L ${hPts[0].x} ${MOB_H} Z`;
-  const hSvgW = hourRows.length * MOB_COL;
-
-  // Y-axis labels
-  const hRough = (vMax0 - vMin0) / 4 || 1;
-  const hMag = Math.pow(10, Math.floor(Math.log10(hRough)));
-  const hNorm = hRough / hMag;
-  const hStep = hNorm < 1.5 ? hMag : hNorm < 3.5 ? 2*hMag : hNorm < 7.5 ? 5*hMag : 10*hMag;
-  let hYLbls = '';
-  for (let v = Math.ceil(vMin0 / hStep) * hStep; v <= vMax0 + 0.001; v += hStep) {
-    const y = toY0(v);
-    if (y >= MOB_PAD_T - 2 && y <= MOB_H - MOB_PAD_B + 2)
-      hYLbls += `<div style="position:absolute;right:3px;transform:translateY(-50%);top:${y}px;font-family:'Space Mono',monospace;font-size:7px;color:rgba(255,255,255,0.28);white-space:nowrap;">${Math.round(v)}</div>`;
-  }
-
-  // Tooltip elements inside SVG
-  const nowLineX = Math.max(2, MOB_COL / 2 - mobMinOff);
-
-  // Icons row (every hour) + time labels (every 3h)
-  // Icons go in a separate scrollable div above the chart, aligned to same column widths
-  const hIconsHtml = hourRows.map((r, i) => {
-    const isNow = i === 0;
-    const showTime = (i % 3 === 0) || isNow;
-    const timeLabel = isNow
-      ? new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase().replace(' ','')
-      : r.timeStr;
-    return `<div style="width:${MOB_COL}px;flex-shrink:0;text-align:center;">
-      <div style="font-size:15px;line-height:1.2;">${weatherIcon(r.sky, r.isNight, r.shortForecast||'')}</div>
-      <div style="font-family:'Space Mono',monospace;font-size:${isNow?'8px':'7px'};color:${isNow?'var(--cyan)':'rgba(255,255,255,0.3)'};margin-top:1px;height:10px;overflow:hidden;">${showTime ? timeLabel : ''}</div>
-    </div>`;
-  }).join('');
-
-  // Temp labels on curve
-  const hTempLabels = hPts.map((pt, i) => {
-    if (i % 3 !== 0 && i !== 0) return '';
-    const tx = Math.max(12, Math.min(hSvgW - 12, pt.x));
-    const ty = Math.max(10, pt.y - 7);
-    return `<text x="${tx}" y="${ty}" text-anchor="middle" font-family="Nunito" font-size="10" font-weight="700" fill="${tempColorJs(pt.t)}" opacity="0.9">${pt.t}°</text>`;
-  }).join('');
-
-  const hSvgContent = `
-    <defs><linearGradient id="hcg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#e8a84a" stop-opacity="0.3"/>
-      <stop offset="100%" stop-color="#e8a84a" stop-opacity="0.02"/>
-    </linearGradient></defs>
-    <path d="${hArea}" fill="url(#hcg)"/>
-    <path d="${hPath}" fill="none" stroke="#e8a84a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-    ${hTempLabels}
-    <line id="mob-now-line" x1="${nowLineX}" y1="0" x2="${nowLineX}" y2="${MOB_H}" stroke="rgba(100,200,255,0.5)" stroke-width="1.5"/>
-    <circle id="mob-h-dot" cx="-100" cy="-100" r="5" fill="#e8a84a" opacity="0"/>
-    <line id="mob-h-vline" x1="-100" y1="${MOB_PAD_T}" x2="-100" y2="${MOB_H-MOB_PAD_B}" stroke="#e8a84a" stroke-width="1" stroke-dasharray="3,3" opacity="0"/>
-    <text id="mob-h-tip" x="0" y="${MOB_PAD_T-4}" font-family="Space Mono" font-size="9" fill="#e8a84a" opacity="0" text-anchor="middle"></text>`;
 
   document.getElementById('mob-page-current').innerHTML = `
     ${alertStrip}
@@ -3662,69 +3574,41 @@ function renderMobileForecast(periods, city, state, office, lat, lon, displayNam
       <div class="mob-cond-text">${firstPeriod.shortForecast}</div>
       <div class="mob-hl">H: ${todayHigh}°  ·  L: ${todayLow}°</div>
       <div class="mob-chips">
-        <div class="cond-chip ${uvCls}" style="cursor:pointer;font-size:11px;">${uvTxt}</div>
+        <div class="cond-chip ${uvCls}" style="font-size:11px;">${uvTxt}</div>
         ${curWind>0?`<div class="cond-chip" style="font-size:11px;">💨 ${curWind}${curGusts?' · G'+curGusts:''}</div>`:''}
-        ${curRh!==null?`<div class="cond-chip" style="font-size:11px;">💧 ${curRh}%</div>`:''}
+        ${curRh!=null?`<div class="cond-chip" style="font-size:11px;">💧 ${curRh}%</div>`:''}
       </div>
     </div>
     <div class="mob-stat-grid">
-      <div class="mob-stat"><div class="mob-stat-label">Precip</div><div class="mob-stat-val">${r0.pop||0}%</div><div class="mob-stat-sub">CHANCE OF RAIN</div></div>
-      <div class="mob-stat"><div class="mob-stat-label">Humidity</div><div class="mob-stat-val">${curRh!==null?curRh+'%':'—'}</div><div class="mob-stat-sub">RELATIVE</div></div>
-      <div class="mob-stat"><div class="mob-stat-label">Wind</div><div class="mob-stat-val">${curWind}</div><div class="mob-stat-sub">MPH ${firstPeriod.windDirection||''}</div></div>
-      <div class="mob-stat"><div class="mob-stat-label">Dewpoint</div><div class="mob-stat-val">${r0.dew!==null&&r0.dew!==undefined?r0.dew+'°':'—'}</div><div class="mob-stat-sub">DEW TEMP</div></div>
-      <div class="mob-stat"><div class="mob-stat-label">Visibility</div><div class="mob-stat-val">${r0.visMiles!==null&&r0.visMiles!==undefined?r0.visMiles.toFixed(1):'—'}</div><div class="mob-stat-sub">MILES</div></div>
+      <div class="mob-stat"><div class="mob-stat-label">Precip</div><div class="mob-stat-val">${r0.pop||0}%</div><div class="mob-stat-sub">CHANCE</div></div>
+      <div class="mob-stat"><div class="mob-stat-label">Humidity</div><div class="mob-stat-val">${curRh!=null?curRh+'%':'—'}</div><div class="mob-stat-sub">RELATIVE</div></div>
+      <div class="mob-stat"><div class="mob-stat-label">Wind</div><div class="mob-stat-val">${curWind}</div><div class="mob-stat-sub">MPH</div></div>
+      <div class="mob-stat"><div class="mob-stat-label">Dewpoint</div><div class="mob-stat-val">${r0.dew!=null?r0.dew+'°':'—'}</div><div class="mob-stat-sub">DEW</div></div>
+      <div class="mob-stat"><div class="mob-stat-label">Visibility</div><div class="mob-stat-val">${r0.visMiles!=null?r0.visMiles.toFixed(1):'—'}</div><div class="mob-stat-sub">MILES</div></div>
       <div class="mob-stat"><div class="mob-stat-label">Pressure</div><div class="mob-stat-val">${r0.pressInHg||'—'}</div><div class="mob-stat-sub">INHG</div></div>
     </div>
     <div class="mob-section-label">HOURLY</div>
-    <div style="display:flex;" id="mob-hourly-outer">
-      <div style="width:${MOB_YAXIS}px;flex-shrink:0;">
-        <div style="height:28px;"></div><!-- icon row spacer -->
-        <div id="mob-yaxis" style="width:${MOB_YAXIS}px;position:relative;height:${MOB_H}px;">${hYLbls}</div>
-      </div>
-      <div style="flex:1;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;" id="mob-hourly-scroll">
-        <div style="display:flex;height:28px;margin-left:-${mobMinOff}px;" id="mob-icons-row">
-          ${hIconsHtml}
-        </div>
-        <div style="position:relative;height:${MOB_H}px;margin-left:-${mobMinOff}px;">
-          <svg id="mob-curve-svg" width="${hSvgW}" height="${MOB_H}" style="display:block;overflow:visible;cursor:crosshair;">
-            ${hSvgContent}
-          </svg>
-        </div>
-      </div>
+    <div class="mob-metric-pills" id="mob-hourly-metric-pills" style="margin:0 0 6px;">
+      <div class="mob-metric-pill active" onclick="mobHourlyMetric('temp',this)">TEMP</div>
+      <div class="mob-metric-pill" onclick="mobHourlyMetric('fl',this)">FEELS</div>
+      <div class="mob-metric-pill" onclick="mobHourlyMetric('pop',this)">PRECIP</div>
+      <div class="mob-metric-pill" onclick="mobHourlyMetric('wind',this)">WIND</div>
+      <div class="mob-metric-pill" onclick="mobHourlyMetric('gust',this)">GUSTS</div>
+      <div class="mob-metric-pill" onclick="mobHourlyMetric('rh',this)">HUMIDITY</div>
+      <div class="mob-metric-pill" onclick="mobHourlyMetric('dew',this)">DEWPOINT</div>
+      <div class="mob-metric-pill" onclick="mobHourlyMetric('sky',this)">SKY</div>
+      <div class="mob-metric-pill" onclick="mobHourlyMetric('vis',this)">VIS</div>
+      <div class="mob-metric-pill" onclick="mobHourlyMetric('pres',this)">PRESSURE</div>
     </div>
+    <div id="mob-hourly-chart"></div>
   `;
-
-  // Wire tooltip on mob-curve-svg
-  requestAnimationFrame(() => {
-    const svg = document.getElementById('mob-curve-svg');
-    if (!svg) return;
-    const dot  = svg.querySelector('#mob-h-dot');
-    const vln  = svg.querySelector('#mob-h-vline');
-    const tip  = svg.querySelector('#mob-h-tip');
-    if (!dot) return;
-    function showHourTip(clientX) {
-      const rect = svg.getBoundingClientRect();
-      const rx = clientX - rect.left;
-      let best = hPts[0], bd = Infinity;
-      hPts.forEach(p => { const d = Math.abs(p.x - rx); if (d < bd) { bd = d; best = p; } });
-      dot.setAttribute('cx', best.x); dot.setAttribute('cy', best.y); dot.setAttribute('opacity','1');
-      vln.setAttribute('x1', best.x); vln.setAttribute('x2', best.x); vln.setAttribute('opacity','0.6');
-      const tx = Math.max(18, Math.min(hSvgW - 18, best.x));
-      tip.setAttribute('x', tx); tip.setAttribute('opacity','1');
-      tip.textContent = `${best.r.timeStr} · ${best.t}°`;
-    }
-    function hideHourTip() { dot.setAttribute('opacity','0'); vln.setAttribute('opacity','0'); tip.setAttribute('opacity','0'); }
-    svg.addEventListener('touchstart', e => { e.stopPropagation(); showHourTip(e.touches[0].clientX); }, {passive:true});
-    svg.addEventListener('touchmove',  e => { showHourTip(e.touches[0].clientX); }, {passive:true});
-    svg.addEventListener('touchend',   () => setTimeout(hideHourTip, 1500), {passive:true});
-    svg.addEventListener('mousemove',  e => showHourTip(e.clientX));
-    svg.addEventListener('mouseleave', hideHourTip);
-  });
+  // Draw the default chart
+  _mobDrawHourlyChart('temp');
 
   // ── PAGE 1: 7-DAY ─────────────────────────────────────────────────────────
   const tMin = Math.min(...dayList.map(d=>Math.min(...d.periods.map(p=>p.temperature))));
   const tMax = Math.max(...dayList.map(d=>Math.max(...d.periods.map(p=>p.temperature))));
-  let dailyHtml = `<div style="padding:16px 0 0;"><div class="mob-section-label" style="padding-top:4px;">7-DAY FORECAST</div></div>`;
+  let dailyHtml = `<div style="padding:16px 0 0;"><div class="mob-section-label" style="padding-top:4px;">FORECAST — ${dayList.length} DAYS</div></div>`;
   dayList.forEach(({periods:dp,date},idx) => {
     const isToday = date.toDateString()===new Date().toDateString();
     const dayName = isToday?'Today':date.toLocaleDateString('en-US',{weekday:'short'});
@@ -3758,6 +3642,187 @@ function renderMobileForecast(periods, city, state, office, lat, lon, displayNam
     `<div class="mob-alerts-page"><div class="mob-section-label" style="padding:4px 0 12px;">ACTIVE ALERTS</div>${alertsHtml}</div>`;
 
   mobGoTo(0);
+}
+
+// ── MOB HOURLY CHART (full-width, compressed, metric-switchable) ─────────────
+let _mobHourlyMetric = 'temp';
+
+function mobHourlyMetric(type, el) {
+  _mobHourlyMetric = type;
+  document.querySelectorAll('#mob-hourly-metric-pills .mob-metric-pill').forEach(p => p.classList.remove('active'));
+  if (el) el.classList.add('active');
+  _mobDrawHourlyChart(type);
+}
+
+function _mobDrawHourlyChart(type) {
+  const container = document.getElementById('mob-hourly-chart');
+  if (!container || !window._hourlyRows?.length) return;
+
+  const rows = window._hourlyRows.slice(0, 24); // 24h fits nicely
+  const n = rows.length;
+  const meta = ROW_META[type] || { color: '#7ab8e8', isTemp: false };
+  const color = meta.isTemp ? '#e8a84a' : (meta.color || '#7ab8e8');
+  const vals = getVals(type, rows);
+  const valid = vals.filter(v => v !== null && !isNaN(v));
+  if (!valid.length) return;
+
+  const rawMin = Math.min(...valid), rawMax = Math.max(...valid);
+  const isPct = ['pop','rh','sky','lightning'].includes(type);
+  const isTempType = ['temp','fl','dew'].includes(type);
+  const isWind = ['wind','gust'].includes(type);
+
+  let vMin, vMax;
+  if (isPct) { vMin = 0; vMax = 100; }
+  else if (isTempType) { const pad = Math.max((rawMax-rawMin)*0.15,4); vMin = rawMin-pad; vMax = rawMax+pad; }
+  else if (isWind) { vMin = 0; vMax = Math.max(20, Math.ceil(Math.max(...rows.map(r=>Math.max(r.ws||0,r.wg||0)))/5)*5); }
+  else if (type==='uv') { vMin = 0; vMax = Math.max(11, Math.ceil(rawMax)); }
+  else if (type==='vis') { vMin = 0; vMax = Math.max(10, Math.ceil(rawMax/5)*5); }
+  else if (type==='pres') { const sp=Math.max((rawMax-rawMin)*0.15,0.05); vMin=Math.floor((rawMin-sp)*10)/10; vMax=Math.ceil((rawMax+sp)*10)/10; }
+  else if (type==='ceil') { vMin=0; vMax=Math.max(10000,Math.ceil(rawMax/5000)*5000); }
+  else { const pad=Math.max((rawMax-rawMin)*0.1,1); vMin=rawMin-pad; vMax=rawMax+pad; }
+
+  const CHART_H = 150, PAD_T = 16, PAD_B = 22, INNER = CHART_H - PAD_T - PAD_B;
+  const Y_W = 32;
+  // Full width: screen width minus yaxis and page padding (16px each side)
+  const chartW = Math.max(200, (window.innerWidth || 390) - Y_W - 32);
+  const COL = chartW / n;
+  const range = vMax - vMin || 1;
+  const toY = v => PAD_T + INNER - ((v - vMin) / range) * INNER;
+  const toX = i => i * COL + COL / 2;
+
+  const pts = rows.map((r, i) => ({
+    x: toX(i), y: toY(vals[i] ?? vMin), v: vals[i], t: r.t, r,
+    timeStr: r.timeStr
+  }));
+
+  // Bezier path
+  let pathD = '';
+  pts.forEach((pt, i) => {
+    if (i === 0) pathD += `M ${pt.x} ${pt.y}`;
+    else { const p = pts[i-1], cpx=(p.x+pt.x)/2; pathD += ` C ${cpx} ${p.y} ${cpx} ${pt.y} ${pt.x} ${pt.y}`; }
+  });
+  const areaD = pathD + ` L ${pts[n-1].x} ${CHART_H} L ${pts[0].x} ${CHART_H} Z`;
+
+  // Y-axis labels
+  const rough = range / 4 || 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+  const norm = rough / mag;
+  const step = norm < 1.5 ? mag : norm < 3.5 ? 2*mag : norm < 7.5 ? 5*mag : 10*mag;
+  let yLbls = '';
+  for (let v = Math.ceil(vMin/step)*step; v <= vMax+0.001; v += step) {
+    const y = toY(v);
+    if (y >= PAD_T-2 && y <= CHART_H-PAD_B+2) {
+      const lbl = type==='pres' ? v.toFixed(2) : type==='vis' ? v.toFixed(1) : Math.round(v);
+      yLbls += `<div style="position:absolute;right:3px;top:${y}px;transform:translateY(-50%);font-family:'Space Mono',monospace;font-size:7px;color:rgba(255,255,255,0.3);white-space:nowrap;">${lbl}</div>`;
+    }
+  }
+
+  // Vertical tick marks every 3 hours
+  let vTicks = '';
+  pts.forEach((pt, i) => {
+    if (i % 3 === 0 && i > 0) {
+      vTicks += `<line x1="${pt.x}" y1="${PAD_T}" x2="${pt.x}" y2="${CHART_H-PAD_B}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
+    }
+  });
+
+  // Value labels every 4th point (or every 3rd for short series)
+  const lblStride = n > 16 ? 4 : 3;
+  let valLbls = '';
+  pts.forEach((pt, i) => {
+    if (i % lblStride !== 0) return;
+    if (pt.v === null || isNaN(pt.v)) return;
+    const lbl = fmtVal(type, pt.v);
+    const yOff = pt.y < PAD_T + 14 ? pt.y + 14 : pt.y - 5;
+    valLbls += `<text x="${pt.x}" y="${yOff}" text-anchor="middle" font-size="9" font-weight="600"
+      fill="${meta.isTemp ? tempColorJs(pt.t) : color}" font-family="Space Mono,monospace"
+      stroke="rgba(10,12,22,0.9)" stroke-width="3" paint-order="stroke">${lbl}</text>`;
+  });
+
+  // Icons row — HTML divs above chart (reliable emoji rendering)
+  const ICON_H = 24;
+  let iconDivs = '';
+  rows.forEach((r, i) => {
+    const ico = weatherIcon(r.sky, r.isNight, r.shortForecast || '');
+    iconDivs += `<div style="position:absolute;left:${toX(i)}px;top:0;transform:translateX(-50%);font-size:13px;line-height:1;">${ico}</div>`;
+  });
+  const iconRow = `<div style="position:relative;width:${chartW}px;height:${ICON_H}px;">${iconDivs}</div>`;
+
+  // Time labels every 3h — HTML divs below chart
+  let timeDivs = '';
+  pts.forEach((pt, i) => {
+    if (i % 3 !== 0) return;
+    const lbl = i === 0
+      ? new Date().toLocaleTimeString('en-US',{hour:'numeric'}).toLowerCase().replace(' ','')
+      : rows[i].timeStr;
+    const col = i === 0 ? 'rgba(100,200,255,0.85)' : 'rgba(255,255,255,0.3)';
+    timeDivs += `<div style="position:absolute;left:${pt.x}px;top:0;transform:translateX(-50%);font-family:'Space Mono',monospace;font-size:7px;color:${col};white-space:nowrap;">${lbl}</div>`;
+  });
+  const timeRow = `<div style="position:relative;width:${chartW}px;height:14px;margin-top:2px;">${timeDivs}</div>`;
+
+  // Now-line: first column center minus minute fraction of one column width
+  const nowFrac = new Date().getMinutes() / 60;
+  const nowX = Math.max(1, toX(0) - nowFrac * COL);
+
+  const gid = 'mhcg_' + type;
+  const svgContent = `
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
+    </linearGradient></defs>
+    ${vTicks}
+    <path d="${areaD}" fill="url(#${gid})"/>
+    <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${valLbls}
+    <line x1="${nowX}" y1="${PAD_T}" x2="${nowX}" y2="${CHART_H-PAD_B}" stroke="rgba(100,200,255,0.5)" stroke-width="1.5"/>
+    <circle id="mob-h-dot" cx="-100" cy="-100" r="4.5" fill="${color}" stroke="rgba(10,12,22,0.9)" stroke-width="1.5" opacity="0"/>
+    <line id="mob-h-vline" x1="-100" y1="${PAD_T}" x2="-100" y2="${CHART_H-PAD_B}" stroke="${color}" stroke-width="1" stroke-dasharray="3,3" opacity="0"/>
+    <text id="mob-h-tip" x="0" y="${PAD_T-3}" font-family="Space Mono" font-size="9" fill="${color}" opacity="0" text-anchor="middle" stroke="rgba(10,12,22,0.85)" stroke-width="3" paint-order="stroke"></text>`;
+
+  const chartSvg = `<svg id="mob-h-svg" width="${chartW}" height="${CHART_H}" style="display:block;overflow:visible;cursor:crosshair;">${svgContent}</svg>`;
+
+  container.innerHTML = `
+    <div style="display:flex;align-items:flex-start;padding:0 16px;">
+      <div style="width:${Y_W}px;flex-shrink:0;">
+        <div style="height:${ICON_H}px;"></div>
+        <div style="position:relative;height:${CHART_H}px;">${yLbls}</div>
+        <div style="height:16px;"></div>
+      </div>
+      <div style="flex:1;min-width:0;">
+        ${iconRow}
+        ${chartSvg}
+        ${timeRow}
+      </div>
+    </div>`;
+
+  // Wire tooltip
+  requestAnimationFrame(() => {
+    const svg = document.getElementById('mob-h-svg');
+    if (!svg) return;
+    const dot = svg.querySelector('#mob-h-dot');
+    const vln = svg.querySelector('#mob-h-vline');
+    const tip = svg.querySelector('#mob-h-tip');
+    if (!dot) return;
+    function showTip(clientX) {
+      const rect = svg.getBoundingClientRect();
+      const rx = clientX - rect.left;
+      let best = pts[0], bd = Infinity;
+      pts.forEach(p => { const d = Math.abs(p.x - rx); if (d < bd) { bd = d; best = p; } });
+      dot.setAttribute('cx', best.x); dot.setAttribute('cy', best.y); dot.setAttribute('opacity', '1');
+      vln.setAttribute('x1', best.x); vln.setAttribute('x2', best.x); vln.setAttribute('opacity', '0.6');
+      const tx = Math.max(20, Math.min(chartW - 20, best.x));
+      tip.setAttribute('x', tx); tip.setAttribute('opacity', '1');
+      const lbl = fmtVal(type, best.v);
+      tip.textContent = `${best.timeStr} · ${lbl}`;
+    }
+    function hideTip() {
+      dot.setAttribute('opacity','0'); vln.setAttribute('opacity','0'); tip.setAttribute('opacity','0');
+    }
+    svg.addEventListener('touchstart', e => { e.stopPropagation(); showTip(e.touches[0].clientX); }, {passive:true});
+    svg.addEventListener('touchmove',  e => { e.stopPropagation(); showTip(e.touches[0].clientX); }, {passive:true});
+    svg.addEventListener('touchend',   () => setTimeout(hideTip, 1800), {passive:true});
+    svg.addEventListener('mousemove',  e => showTip(e.clientX));
+    svg.addEventListener('mouseleave', hideTip);
+  });
 }
 
 // ── CHART ─────────────────────────────────────────────────────────────────────
@@ -3838,20 +3903,19 @@ function mobGoTo(idx) {
   });
 }
 
-// Swipe gesture
+// Swipe gesture for main pages (disabled when day modal is open)
 (function initMobSwipe(){
   let sx=0, sy=0, dragging=false;
+  function modalOpen(){ return document.getElementById('mob-day-modal')?.classList.contains('open'); }
   document.addEventListener('touchstart', e=>{
-    if(!IS_MOBILE()) return;
-    if(document.getElementById('mob-day-modal')?.classList.contains('open')) return;
+    if(!IS_MOBILE()||modalOpen()) return;
     const pages=document.getElementById('mob-pages');
     if(!pages||!document.getElementById('mob-forecast')?.offsetParent) return;
     sx=e.touches[0].clientX; sy=e.touches[0].clientY; dragging=true;
     pages.style.transition='none';
   },{passive:true});
   document.addEventListener('touchmove', e=>{
-    if(!dragging||!IS_MOBILE()) return;
-    if(document.getElementById('mob-day-modal')?.classList.contains('open')) { dragging=false; return; }
+    if(!dragging||!IS_MOBILE()||modalOpen()){dragging=false;return;}
     const pages=document.getElementById('mob-pages');
     if(!pages) return;
     const dx=e.touches[0].clientX-sx, dy=e.touches[0].clientY-sy;
@@ -3859,9 +3923,9 @@ function mobGoTo(idx) {
     pages.style.transform=`translateX(calc(-${_mobCurrentPage*100}% + ${dx}px))`;
   },{passive:true});
   document.addEventListener('touchend', e=>{
-    if(!dragging||!IS_MOBILE()) return;
+    if(!dragging||!IS_MOBILE()){dragging=false;return;}
     dragging=false;
-    if(document.getElementById('mob-day-modal')?.classList.contains('open')) return;
+    if(modalOpen()) return;
     const pages=document.getElementById('mob-pages');
     if(!pages) return;
     pages.style.transition='transform 0.32s cubic-bezier(0.16,1,0.3,1)';
@@ -3876,7 +3940,18 @@ function openMobDayModal(idx) {
   document.querySelectorAll('#mob-day-metric-pills .mob-metric-pill').forEach(p=>p.classList.toggle('active',p.textContent.trim()==='TEMP'));
   _renderMobDayModal();
   const m=document.getElementById('mob-day-modal');
-  if(m) m.classList.add('open');
+  if(m){
+    m.classList.add('open');
+    if(!m._swipeWired){
+      m._swipeWired=true;
+      let msx=0, msy=0;
+      m.addEventListener('touchstart',e=>{msx=e.touches[0].clientX;msy=e.touches[0].clientY;},{passive:true});
+      m.addEventListener('touchend',e=>{
+        const dx=e.changedTouches[0].clientX-msx, dy=e.changedTouches[0].clientY-msy;
+        if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.2) mobDayShift(dx<0?1:-1);
+      },{passive:true});
+    }
+  }
   document.body.style.overflow='hidden';
 }
 
@@ -3928,20 +4003,39 @@ function _renderMobDayChart(animate) {
   const color=meta.isTemp?'#e8a84a':(meta.color||'#7ab8e8');
 
   const isToday = date.toDateString()===new Date().toDateString();
-  const isFuture = date > new Date();
 
-  // For today use ALL _hourlyRows for that calendar date (midnight to midnight)
-  // For future days use NWS periods
+  // For today: use all periods for that calendar date (includes past hours)
+  // For future days: use NWS periods for that day
   let dayRows;
-  if(isToday && allRows?.length){
+  if (isToday) {
     const todayStr = date.toDateString();
-    // All hours whose unixMs falls on today's calendar date
-    dayRows = allRows.filter(r => {
-      const d = new Date(r.unixMs || 0);
-      return d.toDateString() === todayStr;
+    // Use the full periods array from _mobData — includes hours before now
+    const allPeriods = data.periods || [];
+    const todayPeriods = allPeriods.filter(p => new Date(p.startTime).toDateString() === todayStr);
+    dayRows = todayPeriods.map(p => ({
+      t: p.temperature,
+      ws: (p.windSpeed||'').match(/\d+/) ? parseInt(p.windSpeed) : 0,
+      wg: (p.windGust||'').match(/\d+/)  ? parseInt(p.windGust)  : 0,
+      pop: p.probabilityOfPrecipitation?.value ?? 0,
+      rh: p.relativeHumidity?.value ?? null,
+      sky: parseCloudCover(p.shortForecast),
+      dew: p.dewpoint ? Math.round(p.dewpoint.value*9/5+32) : null,
+      fl: p.temperature,
+      isNight: !p.isDaytime,
+      timeStr: hourLabel(p.startTime),
+      unixMs: new Date(p.startTime).getTime(),
+      shortForecast: p.shortForecast || '',
+      uv: 0, visMiles: null, pressInHg: null, snow: null, ice: null, ceil: null, lightning: null,
+    }));
+    // Merge UV from _hourlyRows where available (today only)
+    const hrByHour = {};
+    (window._hourlyRows || []).forEach(r => { hrByHour[Math.floor(r.unixMs/3600000)*3600000] = r; });
+    dayRows = dayRows.map(r => {
+      const hr = hrByHour[Math.floor(r.unixMs/3600000)*3600000];
+      if (hr) return { ...r, uv: hr.uv, visMiles: hr.visMiles, pressInHg: hr.pressInHg, snow: hr.snow, ice: hr.ice, ceil: hr.ceil, lightning: hr.lightning };
+      return r;
     });
-    // Fallback: just take first 24
-    if(!dayRows.length) dayRows = allRows.slice(0,24);
+    if (!dayRows.length) dayRows = (window._hourlyRows||[]).slice(0,24).map(r=>({...r}));
   } else {
     dayRows = dp.map(p=>({
       t:p.temperature,
@@ -3955,18 +4049,19 @@ function _renderMobDayChart(animate) {
       isNight:!p.isDaytime,
       timeStr:hourLabel(p.startTime),
       unixMs:new Date(p.startTime).getTime(),
-      uv:0, vis:null, pressInHg:null, snow:null, ice:null, ceil:null, lightning:null,
+      shortForecast:p.shortForecast||'',
+      uv:0, visMiles:null, pressInHg:null, snow:null, ice:null, ceil:null, lightning:null,
     }));
   }
   if(!dayRows.length) return;
 
-  const vals=dayRows.map(r=>_mobGetVal(type,r));
+  const vals=getVals(type,dayRows);
   const valid=vals.filter(v=>v!==null&&!isNaN(v));
   if(!valid.length){document.getElementById('mob-day-chart-area').innerHTML='<div style="text-align:center;padding:40px;color:var(--muted);font-family:Space Mono,monospace;font-size:9px;">NO DATA FOR THIS METRIC</div>';return;}
 
   const rawMin=Math.min(...valid), rawMax=Math.max(...valid);
   let vMin,vMax;
-  if(['pop','rh','sky'].includes(type)){vMin=0;vMax=100;}
+  if(['pop','rh','sky','lightning'].includes(type)){vMin=0;vMax=100;}
   else if(['temp','fl','dew'].includes(type)){const pad=Math.max((rawMax-rawMin)*0.12,4);vMin=rawMin-pad;vMax=rawMax+pad;}
   else if(['wind','gust'].includes(type)){vMin=0;vMax=Math.max(10,Math.ceil(rawMax/5)*5);}
   else{const pad=Math.max((rawMax-rawMin)*0.1,1);vMin=rawMin-pad;vMax=rawMax+pad;}
@@ -4085,7 +4180,7 @@ function _mobWireDayTooltip(svg, pts, w, h, padT, padB, type, color){
     pts.forEach(p=>{const d=Math.abs(p.x-rx);if(d<bd){bd=d;best=p;}});
     dot.setAttribute('cx',best.x); dot.setAttribute('cy',best.y); dot.setAttribute('opacity','1');
     vline.setAttribute('x1',best.x); vline.setAttribute('x2',best.x); vline.setAttribute('opacity','0.6');
-    const lbl=_mobFmtVal(type,best.v);
+    const lbl=fmtVal(type,best.v);
     const tx=Math.max(18,Math.min(w-18,best.x));
     tip.setAttribute('x',tx); tip.setAttribute('y',padT-2); tip.setAttribute('opacity','1');
     tip.textContent=best.timeStr+' · '+lbl;
@@ -4118,27 +4213,29 @@ function _initDayModalSwipe(){
   const area=document.getElementById('mob-day-chart-area');
   if(!area || area._swipeWired) return;
   area._swipeWired = true;
+  let sx=0;
   area.addEventListener('touchstart', e=>{
-    _dayModalSwipeSx=e.touches[0].clientX;
+    sx=e.touches[0].clientX;
     _dayModalSwiping=true;
   },{passive:true});
   area.addEventListener('touchend', e=>{
     if(!_dayModalSwiping) return;
     _dayModalSwiping=false;
-    const dx=e.changedTouches[0].clientX-_dayModalSwipeSx;
+    const dx=e.changedTouches[0].clientX-sx;
     if(Math.abs(dx)>52) mobDayShift(dx<0?1:-1);
   },{passive:true});
 }
 
-// Stop ALL touches inside day modal from reaching main page swipe
-document.addEventListener('DOMContentLoaded',()=>{
-  const modal=document.getElementById('mob-day-modal');
-  if(modal){
-    modal.addEventListener('touchstart',e=>{ if(modal.classList.contains('open')) e.stopPropagation(); },{passive:true,capture:true});
-    modal.addEventListener('touchmove', e=>{ if(modal.classList.contains('open')) e.stopPropagation(); },{passive:true,capture:true});
-    modal.addEventListener('touchend',  e=>{ if(modal.classList.contains('open')) e.stopPropagation(); },{passive:true,capture:true});
+// Block all touch events on the modal from bubbling to document-level swipe handler
+;(function(){
+  function blockIfModalOpen(e){
+    const m=document.getElementById('mob-day-modal');
+    if(m?.classList.contains('open')) e.stopPropagation();
   }
-});
+  ['touchstart','touchmove','touchend'].forEach(ev=>{
+    document.addEventListener(ev, blockIfModalOpen, {capture:false, passive:true});
+  });
+})();
 
 // ── HOOK INTO renderForecast ─────────────────────────────────────────────────
 const _origRenderForecast = renderForecast;
