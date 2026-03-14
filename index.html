@@ -15,6 +15,12 @@
 <link rel="manifest" id="pwa-manifest" href="">
 
 <title>NWSPoint — US Weather Forecast</title>
+<meta property="og:title" content="NWSPoint — US Weather Forecast">
+<meta property="og:description" content="Fast, accurate U.S. weather forecasts and alerts powered by weather.gov.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="NWSPoint">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://nwspoint.com/">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2307111f'/><circle cx='16' cy='13' r='6' fill='none' stroke='%2338c4e8' stroke-width='2'/><line x1='16' y1='4' x2='16' y2='7' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='16' y1='19' x2='16' y2='22' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='4' y1='13' x2='7' y2='13' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='25' y1='13' x2='28' y2='13' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='8' y1='24' x2='24' y2='24' stroke='%23f4a24a' stroke-width='2.5' stroke-linecap='round'/><line x1='10' y1='27.5' x2='22' y2='27.5' stroke='%23f4a24a' stroke-width='1.5' stroke-linecap='round'/></svg>">
 <meta name="theme-color" content="#07111f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1259,6 +1265,7 @@ const USER_AGENT_HEADERS = { 'User-Agent': 'NWSPoint Weather App' };
 const SEARCH_DEBOUNCE_MS = 350;
 const RECENT_LIMIT = 5;
 const GEOCODE_CACHE_TTL_MS = 10 * 60 * 1000;
+const MAX_GEOCODE_CACHE_ENTRIES = 40;
 let geocodeTimer = null;
 let recentSearches = JSON.parse(localStorage.getItem('wx_recent') || '[]');
 const geocodeCache = new Map();
@@ -1282,7 +1289,13 @@ function readGeocodeCache(query) {
 }
 
 function writeGeocodeCache(query, results) {
-  geocodeCache.set(query.toLowerCase(), { ts: Date.now(), results });
+  const key = query.toLowerCase();
+  geocodeCache.set(key, { ts: Date.now(), results });
+
+  if (geocodeCache.size > MAX_GEOCODE_CACHE_ENTRIES) {
+    const oldestKey = geocodeCache.keys().next().value;
+    if (oldestKey && oldestKey !== key) geocodeCache.delete(oldestKey);
+  }
 }
 
 function saveRecent(displayName, lat, lon) {
@@ -1512,6 +1525,7 @@ function renderSuggestions(results, dropdownId) {
 
 
 function hideSuggestions(id) {
+  suggestRequestToken++;
   const el = document.getElementById(id);
   if (el) { el.classList.remove('show'); el.innerHTML = ''; }
 }
@@ -3578,7 +3592,12 @@ applySkyPhase(new Date().getHours(), '');
     ]
   };
   const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
-  document.getElementById('pwa-manifest').href = URL.createObjectURL(manifestBlob);
+  const manifestLink = document.getElementById('pwa-manifest');
+  const prevManifestUrl = manifestLink.dataset.blobUrl;
+  if (prevManifestUrl) URL.revokeObjectURL(prevManifestUrl);
+  const nextManifestUrl = URL.createObjectURL(manifestBlob);
+  manifestLink.href = nextManifestUrl;
+  manifestLink.dataset.blobUrl = nextManifestUrl;
 
   // 3. Register inline service worker for offline support
   if ('serviceWorker' in navigator) {
