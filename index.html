@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="NWSPoint delivers fast, detailed U.S. weather forecasts, hourly trends, and active alerts powered by weather.gov.">
+<meta name="robots" content="index,follow,max-image-preview:large">
 
 <!-- iPhone App Mode -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,6 +17,8 @@
 <title>NWSPoint — US Weather Forecast</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2307111f'/><circle cx='16' cy='13' r='6' fill='none' stroke='%2338c4e8' stroke-width='2'/><line x1='16' y1='4' x2='16' y2='7' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='16' y1='19' x2='16' y2='22' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='4' y1='13' x2='7' y2='13' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='25' y1='13' x2='28' y2='13' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='8' y1='24' x2='24' y2='24' stroke='%23f4a24a' stroke-width='2.5' stroke-linecap='round'/><line x1='10' y1='27.5' x2='22' y2='27.5' stroke='%23f4a24a' stroke-width='1.5' stroke-linecap='round'/></svg>">
 <meta name="theme-color" content="#07111f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800&family=Nunito+Sans:wght@300;400;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -1254,12 +1258,31 @@ footer { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--mute
 const USER_AGENT_HEADERS = { 'User-Agent': 'NWSPoint Weather App' };
 const SEARCH_DEBOUNCE_MS = 350;
 const RECENT_LIMIT = 5;
+const GEOCODE_CACHE_TTL_MS = 10 * 60 * 1000;
 let geocodeTimer = null;
 let recentSearches = JSON.parse(localStorage.getItem('wx_recent') || '[]');
+const geocodeCache = new Map();
+const geocodeInFlight = new Map();
+let suggestRequestToken = 0;
 
 function toFixedCoord(v) {
   const n = Number.parseFloat(v);
   return Number.isFinite(n) ? n.toFixed(4) : null;
+}
+
+function readGeocodeCache(query) {
+  const key = query.toLowerCase();
+  const entry = geocodeCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > GEOCODE_CACHE_TTL_MS) {
+    geocodeCache.delete(key);
+    return null;
+  }
+  return entry.results;
+}
+
+function writeGeocodeCache(query, results) {
+  geocodeCache.set(query.toLowerCase(), { ts: Date.now(), results });
 }
 
 function saveRecent(displayName, lat, lon) {
@@ -1414,10 +1437,30 @@ function showForecast() {
 
 // ─── GEOCODING via Nominatim ─────────────────────────────────────────────────
 async function geocode(query) {
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&countrycodes=us&format=json&limit=6&addressdetails=1`;
-  const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
-  if (!r.ok) throw new Error(`Geocoder request failed (${r.status})`);
-  return await r.json();
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return [];
+
+  const cached = readGeocodeCache(normalizedQuery);
+  if (cached) return cached;
+
+  const cacheKey = normalizedQuery.toLowerCase();
+  if (geocodeInFlight.has(cacheKey)) return geocodeInFlight.get(cacheKey);
+
+  const pending = (async () => {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(normalizedQuery)}&countrycodes=us&format=json&limit=6&addressdetails=1`;
+    const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    if (!r.ok) throw new Error(`Geocoder request failed (${r.status})`);
+    const results = await r.json();
+    writeGeocodeCache(normalizedQuery, results);
+    return results;
+  })();
+
+  geocodeInFlight.set(cacheKey, pending);
+  try {
+    return await pending;
+  } finally {
+    geocodeInFlight.delete(cacheKey);
+  }
 }
 
 function formatPlace(item) {
@@ -1429,10 +1472,16 @@ function formatPlace(item) {
 
 async function suggestSearch(query, dropdownId) {
   if (query.length < 3) { hideSuggestions(dropdownId); return; }
+
+  const token = ++suggestRequestToken;
   try {
     const results = await geocode(query);
+    if (token !== suggestRequestToken) return;
     renderSuggestions(results, dropdownId);
-  } catch(e) { hideSuggestions(dropdownId); }
+  } catch(e) {
+    if (token !== suggestRequestToken) return;
+    hideSuggestions(dropdownId);
+  }
 }
 
 function renderSuggestions(results, dropdownId) {
@@ -1493,14 +1542,15 @@ function setupSearch(inputId, sugId) {
 
 
 async function doSearch(query, sugId) {
-  if (!query) return;
+  const normalizedQuery = query?.trim();
+  if (!normalizedQuery) return;
   hideSuggestions(sugId);
   try {
-    const results = await geocode(query);
+    const results = await geocode(normalizedQuery);
     if (!results.length) { showError('Location not found. Try a different city or ZIP code.'); return; }
     const r = results[0];
     const p = formatPlace(r);
-    lookupCity(p.display || query, r.lat, r.lon);
+    lookupCity(p.display || normalizedQuery, r.lat, r.lon);
   } catch(e) {
     showError('Could not geocode location. Check your connection and try again.');
   }
