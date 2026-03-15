@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="NWSPoint delivers fast, detailed U.S. weather forecasts, hourly trends, and active alerts powered by weather.gov.">
+<meta name="robots" content="index,follow,max-image-preview:large">
 
 <!-- iPhone App Mode -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,8 +15,16 @@
 <link rel="manifest" id="pwa-manifest" href="">
 
 <title>NWSPoint — US Weather Forecast</title>
+<meta property="og:title" content="NWSPoint — US Weather Forecast">
+<meta property="og:description" content="Fast, accurate U.S. weather forecasts and alerts powered by weather.gov.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="NWSPoint">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://nwspoint.com/">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2307111f'/><circle cx='16' cy='13' r='6' fill='none' stroke='%2338c4e8' stroke-width='2'/><line x1='16' y1='4' x2='16' y2='7' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='16' y1='19' x2='16' y2='22' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='4' y1='13' x2='7' y2='13' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='25' y1='13' x2='28' y2='13' stroke='%2338c4e8' stroke-width='2' stroke-linecap='round'/><line x1='8' y1='24' x2='24' y2='24' stroke='%23f4a24a' stroke-width='2.5' stroke-linecap='round'/><line x1='10' y1='27.5' x2='22' y2='27.5' stroke='%23f4a24a' stroke-width='1.5' stroke-linecap='round'/></svg>">
 <meta name="theme-color" content="#07111f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800&family=Nunito+Sans:wght@300;400;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -1251,13 +1261,51 @@ footer { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--mute
 
 <script>
 // ─── STATE ───────────────────────────────────────────────────────────────────
+const USER_AGENT_HEADERS = { 'User-Agent': 'NWSPoint Weather App' };
+const SEARCH_DEBOUNCE_MS = 350;
+const RECENT_LIMIT = 5;
+const GEOCODE_CACHE_TTL_MS = 10 * 60 * 1000;
+const MAX_GEOCODE_CACHE_ENTRIES = 40;
 let geocodeTimer = null;
 let recentSearches = JSON.parse(localStorage.getItem('wx_recent') || '[]');
+const geocodeCache = new Map();
+const geocodeInFlight = new Map();
+let suggestRequestToken = 0;
+
+function toFixedCoord(v) {
+  const n = Number.parseFloat(v);
+  return Number.isFinite(n) ? n.toFixed(4) : null;
+}
+
+function readGeocodeCache(query) {
+  const key = query.toLowerCase();
+  const entry = geocodeCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > GEOCODE_CACHE_TTL_MS) {
+    geocodeCache.delete(key);
+    return null;
+  }
+  return entry.results;
+}
+
+function writeGeocodeCache(query, results) {
+  const key = query.toLowerCase();
+  geocodeCache.set(key, { ts: Date.now(), results });
+
+  if (geocodeCache.size > MAX_GEOCODE_CACHE_ENTRIES) {
+    const oldestKey = geocodeCache.keys().next().value;
+    if (oldestKey && oldestKey !== key) geocodeCache.delete(oldestKey);
+  }
+}
 
 function saveRecent(displayName, lat, lon) {
+  const parsedLat = Number.parseFloat(lat);
+  const parsedLon = Number.parseFloat(lon);
+  if (!displayName || !Number.isFinite(parsedLat) || !Number.isFinite(parsedLon)) return;
+
   recentSearches = recentSearches.filter(r => r.name !== displayName);
-  recentSearches.unshift({ name: displayName, lat, lon });
-  recentSearches = recentSearches.slice(0, 5);
+  recentSearches.unshift({ name: displayName, lat: parsedLat, lon: parsedLon });
+  recentSearches = recentSearches.slice(0, RECENT_LIMIT);
   try { localStorage.setItem('wx_recent', JSON.stringify(recentSearches)); } catch(e) {}
   renderRecent();
 }
@@ -1265,11 +1313,20 @@ function saveRecent(displayName, lat, lon) {
 function renderRecent() {
   const wrap = document.getElementById('recent-wrap');
   const pills = document.getElementById('recent-pills');
-  if (!recentSearches.length) { wrap.style.display = 'none'; return; }
+  if (!wrap || !pills) return;
+  if (!recentSearches.length) {
+    wrap.style.display = 'none';
+    pills.replaceChildren();
+    return;
+  }
   wrap.style.display = 'block';
-  pills.innerHTML = recentSearches.map(r =>
-    `<span class="pill recent" onclick="lookupCity('${r.name.replace(/'/g,"\\'")}', ${r.lat}, ${r.lon})">🕐 ${r.name}</span>`
-  ).join('');
+  pills.replaceChildren(...recentSearches.map(r => {
+    const pill = document.createElement('span');
+    pill.className = 'pill recent';
+    pill.textContent = `🕐 ${r.name}`;
+    pill.addEventListener('click', () => lookupCity(r.name, r.lat, r.lon));
+    return pill;
+  }));
 }
 
 renderRecent();
@@ -1314,7 +1371,11 @@ async function fetchAlerts(lat, lon) {
   banner.innerHTML = '';
   window._alertData = [];
   try {
-    const r = await fetch(`https://api.weather.gov/alerts/active?point=${parseFloat(lat).toFixed(4)},${parseFloat(lon).toFixed(4)}`, { headers: { 'User-Agent': 'NWSPoint Weather App' } });
+    const latFixed = toFixedCoord(lat);
+    const lonFixed = toFixedCoord(lon);
+    if (!latFixed || !lonFixed) return;
+
+    const r = await fetch(`https://api.weather.gov/alerts/active?point=${latFixed},${lonFixed}`, { headers: USER_AGENT_HEADERS });
     if (!r.ok) return;
     const d = await r.json();
     const features = (d.features || []).slice(0, 5);
@@ -1389,9 +1450,30 @@ function showForecast() {
 
 // ─── GEOCODING via Nominatim ─────────────────────────────────────────────────
 async function geocode(query) {
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&countrycodes=us&format=json&limit=6&addressdetails=1`;
-  const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
-  return await r.json();
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return [];
+
+  const cached = readGeocodeCache(normalizedQuery);
+  if (cached) return cached;
+
+  const cacheKey = normalizedQuery.toLowerCase();
+  if (geocodeInFlight.has(cacheKey)) return geocodeInFlight.get(cacheKey);
+
+  const pending = (async () => {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(normalizedQuery)}&countrycodes=us&format=json&limit=6&addressdetails=1`;
+    const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    if (!r.ok) throw new Error(`Geocoder request failed (${r.status})`);
+    const results = await r.json();
+    writeGeocodeCache(normalizedQuery, results);
+    return results;
+  })();
+
+  geocodeInFlight.set(cacheKey, pending);
+  try {
+    return await pending;
+  } finally {
+    geocodeInFlight.delete(cacheKey);
+  }
 }
 
 function formatPlace(item) {
@@ -1403,27 +1485,47 @@ function formatPlace(item) {
 
 async function suggestSearch(query, dropdownId) {
   if (query.length < 3) { hideSuggestions(dropdownId); return; }
+
+  const token = ++suggestRequestToken;
   try {
     const results = await geocode(query);
+    if (token !== suggestRequestToken) return;
     renderSuggestions(results, dropdownId);
-  } catch(e) { hideSuggestions(dropdownId); }
+  } catch(e) {
+    if (token !== suggestRequestToken) return;
+    hideSuggestions(dropdownId);
+  }
 }
 
 function renderSuggestions(results, dropdownId) {
   const el = document.getElementById(dropdownId);
-  if (!results.length) { hideSuggestions(dropdownId); return; }
-  el.innerHTML = results.map(r => {
+  if (!el || !results.length) { hideSuggestions(dropdownId); return; }
+
+  const nodes = results.map(r => {
     const p = formatPlace(r);
-    return `<div class="suggestion-item"
-      onclick="lookupCity('${p.display.replace(/'/g,"\\'")}', ${r.lat}, ${r.lon})">
-      <span class="sug-icon">📍</span>
-      <span class="sug-name">${p.display}</span>
-    </div>`;
-  }).join('');
+    const item = document.createElement('div');
+    item.className = 'suggestion-item';
+    item.addEventListener('click', () => lookupCity(p.display, r.lat, r.lon));
+
+    const icon = document.createElement('span');
+    icon.className = 'sug-icon';
+    icon.textContent = '📍';
+
+    const name = document.createElement('span');
+    name.className = 'sug-name';
+    name.textContent = p.display;
+
+    item.append(icon, name);
+    return item;
+  });
+
+  el.replaceChildren(...nodes);
   el.classList.add('show');
 }
 
+
 function hideSuggestions(id) {
+  suggestRequestToken++;
   const el = document.getElementById(id);
   if (el) { el.classList.remove('show'); el.innerHTML = ''; }
 }
@@ -1431,27 +1533,38 @@ function hideSuggestions(id) {
 // ─── SEARCH INPUTS ────────────────────────────────────────────────────────────
 function setupSearch(inputId, sugId) {
   const inp = document.getElementById(inputId);
+  const sug = document.getElementById(sugId);
+  if (!inp || !sug) return;
+
   inp.addEventListener('input', () => {
     clearTimeout(geocodeTimer);
-    geocodeTimer = setTimeout(() => suggestSearch(inp.value.trim(), sugId), 350);
+    geocodeTimer = setTimeout(() => suggestSearch(inp.value.trim(), sugId), SEARCH_DEBOUNCE_MS);
   });
+
   inp.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { hideSuggestions(sugId); doSearch(inp.value.trim(), sugId); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      hideSuggestions(sugId);
+      doSearch(inp.value.trim(), sugId);
+    }
   });
+
   document.addEventListener('click', e => {
-    if (!inp.contains(e.target)) hideSuggestions(sugId);
+    if (!inp.contains(e.target) && !sug.contains(e.target)) hideSuggestions(sugId);
   });
 }
 
+
 async function doSearch(query, sugId) {
-  if (!query) return;
+  const normalizedQuery = query?.trim();
+  if (!normalizedQuery) return;
   hideSuggestions(sugId);
   try {
-    const results = await geocode(query);
+    const results = await geocode(normalizedQuery);
     if (!results.length) { showError('Location not found. Try a different city or ZIP code.'); return; }
     const r = results[0];
     const p = formatPlace(r);
-    lookupCity(p.display || query, r.lat, r.lon);
+    lookupCity(p.display || normalizedQuery, r.lat, r.lon);
   } catch(e) {
     showError('Could not geocode location. Check your connection and try again.');
   }
@@ -1476,8 +1589,12 @@ async function lookupCity(displayName, lat, lon) {
   showLoading();
 
   try {
-    const pointsUrl = `https://api.weather.gov/points/${parseFloat(lat).toFixed(4)},${parseFloat(lon).toFixed(4)}`;
-    const pointsRes = await fetch(pointsUrl, { headers: { 'User-Agent': 'NWSPoint Weather App' } });
+    const latFixed = toFixedCoord(lat);
+    const lonFixed = toFixedCoord(lon);
+    if (!latFixed || !lonFixed) throw new Error('Invalid coordinates for lookup');
+
+    const pointsUrl = `https://api.weather.gov/points/${latFixed},${lonFixed}`;
+    const pointsRes = await fetch(pointsUrl, { headers: USER_AGENT_HEADERS });
     if (!pointsRes.ok) throw new Error(`NWS points API error ${pointsRes.status}`);
     const points = await pointsRes.json();
 
@@ -1490,10 +1607,10 @@ async function lookupCity(displayName, lat, lon) {
 
     // Fetch hourly + gridData + UV + open-meteo (pressure/extras) in parallel
     const [hourlyRes, gridRes, uvRes, meteoRes] = await Promise.all([
-      fetch(hourlyUrl, { headers: { 'User-Agent': 'NWSPoint Weather App' } }),
-      fetch(gridUrl,   { headers: { 'User-Agent': 'NWSPoint Weather App' } }),
+      fetch(hourlyUrl, { headers: USER_AGENT_HEADERS }),
+      fetch(gridUrl,   { headers: USER_AGENT_HEADERS }),
       Promise.resolve(null),
-      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}&hourly=surface_pressure,visibility,windgusts_10m,boundary_layer_height,cape,uv_index&wind_speed_unit=mph&timeformat=unixtime&forecast_days=7`).catch(() => null),
+      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latFixed}&longitude=${lonFixed}&hourly=surface_pressure,visibility,windgusts_10m,boundary_layer_height,cape,uv_index&wind_speed_unit=mph&timeformat=unixtime&forecast_days=7`).catch(() => null),
     ]);
     if (!hourlyRes.ok) throw new Error(`NWS hourly API error ${hourlyRes.status}`);
     const hourlyData = await hourlyRes.json();
@@ -3196,21 +3313,35 @@ function triggerRefresh() {
 
   const badge = document.getElementById('live-badge');
   const liveText = document.getElementById('live-text');
-  if (badge) { badge.classList.add('refreshing'); liveText.textContent = 'UPDATING'; }
+  if (badge) badge.classList.add('refreshing');
+  if (liveText) liveText.textContent = 'UPDATING';
 
   // Re-fetch without showing loading spinner (silent refresh)
   const { displayName, lat, lon } = currentLocation;
-  const pointsUrl = `https://api.weather.gov/points/${parseFloat(lat).toFixed(4)},${parseFloat(lon).toFixed(4)}`;
+  const latFixed = toFixedCoord(lat);
+  const lonFixed = toFixedCoord(lon);
+  if (!latFixed || !lonFixed) {
+    if (badge) badge.classList.remove('refreshing');
+    if (liveText) liveText.textContent = 'LIVE';
+    countdownTimer = setInterval(() => {
+      secondsLeft--;
+      updateBadge();
+      if (secondsLeft <= 0) triggerRefresh();
+    }, 1000);
+    return;
+  }
 
-  fetch(pointsUrl, { headers: { 'User-Agent': 'NWSPoint Weather App' } })
+  const pointsUrl = `https://api.weather.gov/points/${latFixed},${lonFixed}`;
+
+  fetch(pointsUrl, { headers: USER_AGENT_HEADERS })
     .then(r => r.json())
     .then(points => {
       const props = points.properties;
       return Promise.all([
-        fetch(props.forecastHourly, { headers: { 'User-Agent': 'NWSPoint Weather App' } }),
-        fetch(props.forecastGridData, { headers: { 'User-Agent': 'NWSPoint Weather App' } }).catch(() => null),
+        fetch(props.forecastHourly, { headers: USER_AGENT_HEADERS }),
+        fetch(props.forecastGridData, { headers: USER_AGENT_HEADERS }).catch(() => null),
         Promise.resolve(null),
-        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}&hourly=surface_pressure,visibility,windgusts_10m,boundary_layer_height,cape,uv_index&wind_speed_unit=mph&timeformat=unixtime&forecast_days=7`).catch(() => null),
+        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latFixed}&longitude=${lonFixed}&hourly=surface_pressure,visibility,windgusts_10m,boundary_layer_height,cape,uv_index&wind_speed_unit=mph&timeformat=unixtime&forecast_days=7`).catch(() => null),
         Promise.resolve(props),
       ]);
     })
@@ -3234,7 +3365,8 @@ function triggerRefresh() {
       }, 1000);
     })
     .catch(() => {
-      if (badge) { badge.classList.remove('refreshing'); liveText.textContent = 'LIVE'; }
+      if (badge) badge.classList.remove('refreshing');
+      if (liveText) liveText.textContent = 'LIVE';
       secondsLeft = REFRESH_INTERVAL;
       countdownTimer = setInterval(() => {
         secondsLeft--;
@@ -3460,7 +3592,12 @@ applySkyPhase(new Date().getHours(), '');
     ]
   };
   const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
-  document.getElementById('pwa-manifest').href = URL.createObjectURL(manifestBlob);
+  const manifestLink = document.getElementById('pwa-manifest');
+  const prevManifestUrl = manifestLink.dataset.blobUrl;
+  if (prevManifestUrl) URL.revokeObjectURL(prevManifestUrl);
+  const nextManifestUrl = URL.createObjectURL(manifestBlob);
+  manifestLink.href = nextManifestUrl;
+  manifestLink.dataset.blobUrl = nextManifestUrl;
 
   // 3. Register inline service worker for offline support
   if ('serviceWorker' in navigator) {
